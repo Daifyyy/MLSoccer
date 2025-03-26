@@ -1,11 +1,15 @@
 import pandas as pd
+import os
+import joblib
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, accuracy_score
 from sklearn.model_selection import train_test_split
 
-# Cesty k datům
-TRAINING_DATA = "../data/E0_combined_full.csv"
-TEST_DATA = "../data/E0 test set.csv"
+# Dynamická cesta k datům relativní k tomuto skriptu
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TRAINING_DATA = os.path.join(BASE_DIR, "data", "E0_combined_full.csv")
+TEST_DATA = os.path.join(BASE_DIR, "data", "E0 test set.csv")
+
 
 # Načtení dat
 train_df = pd.read_csv(TRAINING_DATA)
@@ -28,6 +32,10 @@ model.fit(X_train, y_train)
 
 # Predikce
 predictions = model.predict(X_test)
+
+# Uložíme model do souboru
+joblib.dump(model, "../models/over25_model.joblib")
+print("Model uložen jako over25_model.joblib")
 
 # Vyhodnocení
 print("Accuracy:", accuracy_score(y_test, predictions))
