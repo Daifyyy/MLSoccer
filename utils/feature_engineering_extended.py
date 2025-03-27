@@ -1,24 +1,30 @@
 import pandas as pd
+import numpy as np
+from datetime import datetime
+
+def calculate_elo(team_elo, home_team, away_team, home_goals, away_goals, k=20):
+    expected_home = 1 / (1 + 10 ** ((team_elo.get(away_team, 1500) - team_elo.get(home_team, 1500)) / 400))
+    result = 1 if home_goals > away_goals else 0 if home_goals < away_goals else 0.5
+    change = k * (result - expected_home)
+    team_elo[home_team] = team_elo.get(home_team, 1500) + change
+    team_elo[away_team] = team_elo.get(away_team, 1500) - change
+    return team_elo
 
 def generate_extended_features(df):
     df = df.copy()
-
-    # Seznam týmů
-    teams = set(df['HomeTeam']).union(set(df['AwayTeam']))
-
-    # Výstupní datová struktura
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    team_elo = {}
     rows = []
 
     for idx, row in df.iterrows():
         home = row['HomeTeam']
         away = row['AwayTeam']
-        match_date = row['Date'] if 'Date' in row else idx
+        match_date = row['Date']
 
-        # Historie domácích a hostů do data zápasu
-        home_matches = df[((df['HomeTeam'] == home) | (df['AwayTeam'] == home)) & (df.index < idx)].tail(6)
-        away_matches = df[((df['HomeTeam'] == away) | (df['AwayTeam'] == away)) & (df.index < idx)].tail(6)
+        past_matches = df[df['Date'] < match_date]
+        home_matches = past_matches[(past_matches['HomeTeam'] == home) | (past_matches['AwayTeam'] == home)].tail(6)
+        away_matches = past_matches[(past_matches['HomeTeam'] == away) | (past_matches['AwayTeam'] == away)].tail(6)
 
-        # Výpočty průměrů
         def avg_stat(matches, team, col):
             home_vals = matches[matches['HomeTeam'] == team][col]
             away_vals = matches[matches['AwayTeam'] == team][col]
@@ -43,7 +49,6 @@ def generate_extended_features(df):
             'goals_conceded_away_form': avg_stat(away_matches, away, 'FTHG'),
         }
 
-        # Rozdíly mezi domácími a hosty
         for key in list(features.keys()):
             if key.endswith('_home_form'):
                 base = key.replace('_home_form', '')
@@ -51,7 +56,6 @@ def generate_extended_features(df):
                 diff_key = f'{base}_diff'
                 features[diff_key] = features[key] - features.get(away_key, 0)
 
-        # Nová featura: procento zápasů Over 2.5 za posledních 6 utkání
         def calc_over25_ratio(matches):
             over25 = matches[(matches['FTHG'] + matches['FTAG']) > 2.5]
             return len(over25) / 6 if len(matches) >= 1 else 0.0
@@ -59,9 +63,23 @@ def generate_extended_features(df):
         features['over25_form_ratio_home'] = calc_over25_ratio(home_matches)
         features['over25_form_ratio_away'] = calc_over25_ratio(away_matches)
 
-        # Výsledek
+        # Elo rating soupeřů
+        features['elo_rating_home'] = team_elo.get(home, 1500)
+        features['elo_rating_away'] = team_elo.get(away, 1500)
+
+        # Váha zápasu podle data
+        if pd.notnull(match_date):
+            days_since = (datetime.now() - match_date).days
+            features['match_weight'] = 1 / (days_since + 1)
+        else:
+            features['match_weight'] = 1.0
+
         row_features = row.to_dict()
         row_features.update(features)
         rows.append(row_features)
+
+        # Aktualizace Elo ratingu po zápase
+        if not pd.isnull(row['FTHG']) and not pd.isnull(row['FTAG']):
+            team_elo = calculate_elo(team_elo, home, away, row['FTHG'], row['FTAG'])
 
     return pd.DataFrame(rows)
