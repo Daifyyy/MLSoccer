@@ -25,6 +25,9 @@ def generate_extended_features(df):
         home_matches = past_matches[(past_matches['HomeTeam'] == home) | (past_matches['AwayTeam'] == home)].tail(6)
         away_matches = past_matches[(past_matches['HomeTeam'] == away) | (past_matches['AwayTeam'] == away)].tail(6)
 
+        home_home_matches = past_matches[past_matches['HomeTeam'] == home].tail(5)
+        away_away_matches = past_matches[past_matches['AwayTeam'] == away].tail(5)
+
         def avg_stat(matches, team, col):
             home_vals = matches[matches['HomeTeam'] == team][col]
             away_vals = matches[matches['AwayTeam'] == team][col]
@@ -47,6 +50,16 @@ def generate_extended_features(df):
             'goals_scored_away_form': avg_stat(away_matches, away, 'FTAG'),
             'goals_conceded_home_form': avg_stat(home_matches, home, 'FTAG'),
             'goals_conceded_away_form': avg_stat(away_matches, away, 'FTHG'),
+
+            # Nové featury – domácí a venkovní forma
+            'avg_goals_scored_home_last5': home_home_matches['FTHG'].mean(),
+            'avg_goals_conceded_home_last5': home_home_matches['FTAG'].mean(),
+            'avg_goals_scored_away_last5': away_away_matches['FTAG'].mean(),
+            'avg_goals_conceded_away_last5': away_away_matches['FTHG'].mean(),
+            'avg_shots_home_last5': home_home_matches['HS'].mean(),
+            'avg_shots_on_target_home_last5': home_home_matches['HST'].mean(),
+            'avg_shots_away_last5': away_away_matches['AS'].mean(),
+            'avg_shots_on_target_away_last5': away_away_matches['AST'].mean(),
         }
 
         for key in list(features.keys()):
@@ -63,11 +76,9 @@ def generate_extended_features(df):
         features['over25_form_ratio_home'] = calc_over25_ratio(home_matches)
         features['over25_form_ratio_away'] = calc_over25_ratio(away_matches)
 
-        # Elo rating soupeřů
         features['elo_rating_home'] = team_elo.get(home, 1500)
         features['elo_rating_away'] = team_elo.get(away, 1500)
 
-        # Váha zápasu podle data
         if pd.notnull(match_date):
             days_since = (datetime.now() - match_date).days
             features['match_weight'] = 1 / (days_since + 1)
@@ -78,7 +89,6 @@ def generate_extended_features(df):
         row_features.update(features)
         rows.append(row_features)
 
-        # Aktualizace Elo ratingu po zápase
         if not pd.isnull(row['FTHG']) and not pd.isnull(row['FTAG']):
             team_elo = calculate_elo(team_elo, home, away, row['FTHG'], row['FTAG'])
 
