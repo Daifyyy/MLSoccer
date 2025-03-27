@@ -1,57 +1,40 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import os
-from utils.data_loader import load_data, get_teams, filter_team_matches, filter_h2h_matches
 from utils.feature_engineering_extended import generate_extended_features
-from sklearn.ensemble import RandomForestClassifier
+from utils.data_loader import load_combined_data, get_teams
+from utils.model_utils import prepare_features_for_prediction
 
-st.set_page_config(page_title="Fotbalová predikce: Over 2.5 gólu", page_icon="\U0001F3C0")
-st.title("\U0001F3C0 Fotbalová predikce: Over 2.5 gólu")
-
-status = st.empty()
-status.success("Aplikace byla úspěšně načtena.")
+st.title("⚽ Predikce více než 2,5 gólů")
 
 # Výběr ligy
-league = st.selectbox("Vyber ligu", ["E0", "SP1"])
-
-# Cesty k souborům
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.join(BASE_DIR, "data", f"{league}_combined_full.csv")
-model_path = os.path.join(BASE_DIR, "models", f"{league}_rf_model.joblib")
-
-# Načtení dat a modelu
-status.info("Načítám data a model...")
-try:
-    data = pd.read_csv(data_path)
-    model = joblib.load(model_path)
-    status.success("Data načtena")
-    status.success("Model načten")
-except Exception as e:
-    status.error(f"Chyba při načítání: {e}")
-    st.stop()
-
+LEAGUE = st.selectbox("Vyber ligu", ["E0", "SP1", "D1", "I1", "F1", "N1"])
+data = load_combined_data(LEAGUE)
 teams = get_teams(data)
+
 home_team = st.selectbox("Vyber domácí tým", teams)
-away_team = st.selectbox("Vyber hostující tým", [t for t in teams if t != home_team])
+away_team = st.selectbox("Vyber hostující tým", teams)
 
-if st.button("\U0001F4AB Predikovat"):
-    # Připrav vstupní data
-    team_data = filter_h2h_matches(data, home_team, away_team)
-    if team_data.empty or len(team_data) < 1:
-        st.error("Nedostatek historických dat pro vybrané týmy.")
-    else:
-        team_data = generate_extended_features(team_data)
-        latest = team_data.tail(1)
-        features = model.feature_names_in_
-        X_input = latest[features]
+if st.button("🔍 Predikovat"):
+    try:
+        df_ext = generate_extended_features(data)
+        features = prepare_features_for_prediction(df_ext, home_team, away_team)
 
-        prediction = model.predict(X_input)[0]
-        proba = model.predict_proba(X_input)[0][1] * 100
+        # Načti oba modely
+        rf_model = joblib.load(f"models/{LEAGUE}_rf_model.joblib")
+        xgb_model = joblib.load(f"models/{LEAGUE}_xgb_model.joblib")
 
-        st.subheader("\U0001F4CA Výsledek predikce")
-        st.write(f"**Pravděpodobnost OVER 2.5:** {proba:.2f}%")
-        if prediction == 1:
-            st.success("\U00002705 Model predikuje: OVER 2.5 gólu")
-        else:
-            st.error("\U0000274C Model predikuje: UNDER 2.5 gólu")
+        rf_prob = rf_model.predict_proba([features])[0][1]
+        xgb_prob = xgb_model.predict_proba([features])[0][1]
+
+        st.markdown("## 📊 Výsledky predikce")
+        st.write(f"🎯 **Random Forest** pravděpodobnost Over 2.5: `{rf_prob:.2%}`")
+        st.write(f"🎯 **XGBoost** pravděpodobnost Over 2.5: `{xgb_prob:.2%}`")
+
+        rf_pred = "✅ Ano" if rf_prob > 0.5 else "❌ Ne"
+        xgb_pred = "✅ Ano" if xgb_prob > 0.5 else "❌ Ne"
+
+        st.write(f"📌 RF říká: **{rf_pred}**  |  📌 XGB říká: **{xgb_pred}**")
+
+    except Exception as e:
+        st.error(f"Nastala chyba: {e}")

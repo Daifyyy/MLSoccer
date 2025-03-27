@@ -1,0 +1,24 @@
+
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+*.ipynb_checkpoints/
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Modely
+/models/*.joblib
+
+# Prostředí
+.env
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter runtime
+*.nbconvert.ipynb

@@ -12,7 +12,7 @@ def calculate_elo(team_elo, home_team, away_team, home_goals, away_goals, k=20):
 
 def generate_extended_features(df):
     df = df.copy()
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
     team_elo = {}
     rows = []
 
@@ -51,7 +51,6 @@ def generate_extended_features(df):
             'goals_conceded_home_form': avg_stat(home_matches, home, 'FTAG'),
             'goals_conceded_away_form': avg_stat(away_matches, away, 'FTHG'),
 
-            # Nové featury – domácí a venkovní forma
             'avg_goals_scored_home_last5': home_home_matches['FTHG'].mean(),
             'avg_goals_conceded_home_last5': home_home_matches['FTAG'].mean(),
             'avg_goals_scored_away_last5': away_away_matches['FTAG'].mean(),
@@ -60,6 +59,12 @@ def generate_extended_features(df):
             'avg_shots_on_target_home_last5': home_home_matches['HST'].mean(),
             'avg_shots_away_last5': away_away_matches['AS'].mean(),
             'avg_shots_on_target_away_last5': away_away_matches['AST'].mean(),
+
+            # Nové metriky: fauly a karty
+            'avg_fouls_home_last5': home_home_matches['HF'].mean(),
+            'avg_fouls_away_last5': away_away_matches['AF'].mean(),
+            'avg_cards_home_last5': home_home_matches[['HY', 'HR']].sum(axis=1).mean(),
+            'avg_cards_away_last5': away_away_matches[['AY', 'AR']].sum(axis=1).mean(),
         }
 
         for key in list(features.keys()):
@@ -87,6 +92,7 @@ def generate_extended_features(df):
 
         row_features = row.to_dict()
         row_features.update(features)
+        row_features['Over_2.5'] = 1 if (row['FTHG'] + row['FTAG']) > 2.5 else 0
         rows.append(row_features)
 
         if not pd.isnull(row['FTHG']) and not pd.isnull(row['FTAG']):
