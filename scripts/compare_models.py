@@ -11,7 +11,13 @@ from utils.feature_engineering_extended import generate_extended_features
 df = pd.read_csv("data/E0_combined_full.csv")
 df_ext = generate_extended_features(df)
 
-features = [col for col in df_ext.columns if col.endswith("_form") or col.endswith("_diff") or col.startswith("over25") or col.startswith("elo_rating")]
+features = [
+    col for col in df_ext.columns
+    if col.endswith("_form") or col.endswith("_diff")
+    or col.startswith("over25") or col.startswith("elo_rating")
+    or col.endswith("_last5")
+]
+
 X = df_ext[features].fillna(0)
 y = df_ext["Over_2.5"]
 sample_weights = df_ext["match_weight"].fillna(1.0)
