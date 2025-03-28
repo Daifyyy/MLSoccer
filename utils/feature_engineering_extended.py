@@ -86,7 +86,7 @@ def generate_extended_features(df):
 
         if pd.notnull(match_date):
             days_since = (datetime.now() - match_date).days
-            features['match_weight'] = 1 / (days_since + 1)
+            features['match_weight'] = 1 / np.log1p(days_since + 1)
         else:
             features['match_weight'] = 1.0
 

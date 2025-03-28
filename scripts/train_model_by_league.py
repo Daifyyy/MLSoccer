@@ -53,12 +53,11 @@ print("\n🔧 Trénuji XGBoost model...")
 scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
 xgb_model = XGBClassifier(
-    max_depth=3,
-    n_estimators=100,
-    learning_rate=0.05,
-    subsample=0.8,
+    max_depth=6,
+    n_estimators=300,
+    learning_rate=0.1,
+    subsample=0.6,
     scale_pos_weight=scale_pos_weight,
-    use_label_encoder=False,
     eval_metric="logloss",
     random_state=42
 )

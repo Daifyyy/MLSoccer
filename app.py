@@ -10,14 +10,16 @@ st.title("⚽ Predikce více než 2,5 gólů")
 # Výběr ligy
 LEAGUE = st.selectbox("Vyber ligu", ["E0", "SP1", "D1", "I1", "F1", "N1"])
 data = load_combined_data(LEAGUE)
+
 teams = get_teams(data)
 
 home_team = st.selectbox("Vyber domácí tým", teams)
 away_team = st.selectbox("Vyber hostující tým", teams)
-
+data_filtered = data[(data['HomeTeam'] == home_team) | (data['AwayTeam'] == home_team) |
+                     (data['HomeTeam'] == away_team) | (data['AwayTeam'] == away_team)]
 if st.button("🔍 Predikovat"):
     try:
-        df_ext = generate_extended_features(data)
+        df_ext = generate_extended_features(data_filtered)
         features = prepare_features_for_prediction(df_ext, home_team, away_team)
 
         # Načti oba modely
