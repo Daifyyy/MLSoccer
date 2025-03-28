@@ -2,41 +2,47 @@ import streamlit as st
 import pandas as pd
 import joblib
 from utils.feature_engineering_extended import generate_extended_features
-from utils.data_loader import load_combined_data, get_teams
 from utils.model_utils import prepare_features_for_prediction
+import os
 
-st.title("⚽ Predikce více než 2,5 gólů")
+st.set_page_config(page_title="Predikce zápasu", layout="centered")
+st.title("⚽ Predikce výsledku fotbalového zápasu")
 
-# Výběr ligy
-LEAGUE = st.selectbox("Vyber ligu", ["E0", "SP1", "D1", "I1", "F1", "N1"])
-data = load_combined_data(LEAGUE)
+# === Výběr ligy ===
+league_files = [f for f in os.listdir("data") if f.endswith("combined_full.csv")]
+selected_league_file = st.selectbox("Vyber ligu:", league_files)
 
-teams = get_teams(data)
+# === Načtení dat ===
+if selected_league_file:
+    league_code = selected_league_file.split("_")[0]
+    df = pd.read_csv(f"data/{selected_league_file}")
+    df_ext = generate_extended_features(df)
 
-home_team = st.selectbox("Vyber domácí tým", teams)
-away_team = st.selectbox("Vyber hostující tým", teams)
-data_filtered = data[(data['HomeTeam'] == home_team) | (data['AwayTeam'] == home_team) |
-                     (data['HomeTeam'] == away_team) | (data['AwayTeam'] == away_team)]
-if st.button("🔍 Predikovat"):
-    try:
-        df_ext = generate_extended_features(data_filtered)
-        features = prepare_features_for_prediction(df_ext, home_team, away_team)
+    available_teams = sorted(set(df_ext["HomeTeam"]).union(df_ext["AwayTeam"]))
+    home_team = st.selectbox("Domácí tým:", available_teams)
+    away_team = st.selectbox("Hostující tým:", [team for team in available_teams if team != home_team])
 
-        # Načti oba modely
-        rf_model = joblib.load(f"models/{LEAGUE}_rf_model.joblib")
-        xgb_model = joblib.load(f"models/{LEAGUE}_xgb_model.joblib")
+    if st.button("🔮 Provést predikci"):
+        try:
+            model_path_rf = f"models/{league_code}_rf_model.joblib"
+            model_path_xgb = f"models/{league_code}_xgb_model.joblib"
 
-        rf_prob = rf_model.predict_proba([features])[0][1]
-        xgb_prob = xgb_model.predict_proba([features])[0][1]
+            if not os.path.exists(model_path_rf) or not os.path.exists(model_path_xgb):
+                st.error("Model pro tuto ligu nebyl nalezen. Nejdřív jej natrénuj.")
+            else:
+                model_rf = joblib.load(model_path_rf)
+                model_xgb = joblib.load(model_path_xgb)
 
-        st.markdown("## 📊 Výsledky predikce")
-        st.write(f"🎯 **Random Forest** pravděpodobnost Over 2.5: `{rf_prob:.2%}`")
-        st.write(f"🎯 **XGBoost** pravděpodobnost Over 2.5: `{xgb_prob:.2%}`")
+                X_pred = prepare_features_for_prediction(df_ext, home_team, away_team)
 
-        rf_pred = "✅ Ano" if rf_prob > 0.5 else "❌ Ne"
-        xgb_pred = "✅ Ano" if xgb_prob > 0.5 else "❌ Ne"
+                proba_rf = model_rf.predict_proba(X_pred)[0][1]
+                proba_xgb = model_xgb.predict_proba(X_pred)[0][1]
+                avg_proba = (proba_rf + proba_xgb) / 2
 
-        st.write(f"📌 RF říká: **{rf_pred}**  |  📌 XGB říká: **{xgb_pred}**")
+                st.subheader("📊 Výsledky predikce")
+                st.write(f"**Random Forest pravděpodobnost Over 2.5 gólů:** {proba_rf:.2f}")
+                st.write(f"**XGBoost pravděpodobnost Over 2.5 gólů:** {proba_xgb:.2f}")
+                st.success(f"**Průměrná pravděpodobnost (Over 2.5): {avg_proba:.2f}**")
 
-    except Exception as e:
-        st.error(f"Nastala chyba: {e}")
+        except Exception as e:
+            st.error(f"Nastala chyba během predikce: {e}")
