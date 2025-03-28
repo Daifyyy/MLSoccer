@@ -15,24 +15,15 @@ df = pd.read_csv(data_path)
 df_ext = generate_extended_features(df)
 
 # === Výběr feature ===
-base_features = [
+features = [
     col for col in df_ext.columns
     if col.endswith("_form") or col.endswith("_diff")
-    or col.endswith("_last5") or col.startswith("elo_rating")
-    or col.endswith("_fouls") or col.endswith("_cards")
-    or col.startswith("over25")
+    or col.startswith("over25") or col.startswith("elo_rating")
+    or col.endswith("_last5") or col.endswith("_weight")
+    or col.endswith("_cards") or col.endswith("_fouls")
+    or col.startswith("xg_pseudo") or col.startswith("boring")
 ]
 
-# === Přidání nových feature ručně ===
-extra_features = []
-if "xg_expected_goals_home" in df_ext.columns:
-    extra_features.append("xg_expected_goals_home")
-if "xg_expected_goals_away" in df_ext.columns:
-    extra_features.append("xg_expected_goals_away")
-if "boring_match_score" in df_ext.columns:
-    extra_features.append("boring_match_score")
-
-features = base_features + extra_features
 
 X = df_ext[features].fillna(0)
 y = df_ext["Over_2.5"]
