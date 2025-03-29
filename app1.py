@@ -2,7 +2,8 @@ import os
 import pandas as pd
 import streamlit as st
 import joblib
-
+import matplotlib.pyplot as plt
+import numpy as np
 from utils.data_loader import load_data_by_league, get_teams_by_league, filter_team_matches, filter_h2h_matches, get_teams
 from utils.feature_engineering_extended import generate_extended_features
 
@@ -11,9 +12,7 @@ st.title("⚽ Predikce zápasu – Over 2.5 goals")
 # 📂 Výběr ligy
 leagues = ["E0", "SP1", "D1", "I1", "F1", "N1"]
 league_code = st.selectbox("Vyber ligu", leagues)
-# Nastavené prahy podle analýzy F1-score
-rf_threshold = 0.39
-xgb_threshold = 0.20
+
 # 📊 Načtení dat a týmů
 df_raw = load_data_by_league(league_code)
 teams = get_teams(df_raw)
@@ -62,17 +61,41 @@ if st.button("🔍 Spustit predikci"):
             # 🧪 Vstupní data pro model
             X_input = match_row[features].fillna(0)
 
-            rf_prob = rf_model.predict_proba(X_input)[0][1]
-            xgb_prob = xgb_model.predict_proba(X_input)[0][1]
-            # Převedení pravděpodobností na finální predikci pomocí optimalizovaného thresholdu
-            rf_pred = rf_prob > rf_threshold
-            xgb_pred = xgb_prob > xgb_threshold
+            rf_pred = rf_model.predict_proba(X_input)[0][1]
+            xgb_pred = xgb_model.predict_proba(X_input)[0][1]
+            # Histogram predikovaných pravděpodobností
+            simulated_preds = np.random.normal(loc=xgb_pred, scale=0.05, size=100)
+            simulated_preds = np.clip(simulated_preds, 0, 1)  # zajistit hodnoty mezi 0 a 1
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.hist(simulated_preds, bins=20, color='blue', edgecolor='black')
+            ax.axvline(xgb_pred, color='red', linestyle='--', label=f"Aktuální predikce: {xgb_pred:.2%}")
+
+            ax.set_title("Distribuce predikovaných pravděpodobností - XGBoost (simulace)")
+            ax.set_xlabel("Pravděpodobnost Over 2.5")
+            ax.set_ylabel("Počet hypotetických zápasů")
+            ax.legend()
+            ax.grid(True)
+            st.pyplot(fig)
+            
+            simulated_preds = np.random.normal(loc=rf_pred, scale=0.05, size=100)
+            simulated_preds = np.clip(simulated_preds, 0, 1)  # zajistit hodnoty mezi 0 a 1
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.hist(simulated_preds, bins=20, color='blue', edgecolor='black')
+            ax.axvline(rf_pred, color='red', linestyle='--', label=f"Aktuální predikce: {rf_pred:.2%}")
+
+            ax.set_title("Distribuce predikovaných pravděpodobností - Random forest (simulace)")
+            ax.set_xlabel("Pravděpodobnost Over 2.5")
+            ax.set_ylabel("Počet hypotetických zápasů")
+            ax.legend()
+            ax.grid(True)
+            st.pyplot(fig)
+
             # 📈 Výstup
             st.subheader("📊 Výsledky predikce:")
-            #st.write(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_pred:.2%}**")
-            #st.write(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_pred:.2%}**")
-            
-            st.markdown(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_prob*100:.2f}%** → {'✅ ANO' if rf_pred else '❌ NE'}")
-            st.markdown(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_prob*100:.2f}%** → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.write(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_pred:.2%}**")
+            st.write(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_pred:.2%}**")
+
     except Exception as e:
         st.error(f"❌ Nastala chyba během predikce: {e}")
