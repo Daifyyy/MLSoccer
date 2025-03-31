@@ -12,7 +12,11 @@ from utils.data_loader import load_data_by_league, filter_team_matches, filter_h
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce počtu gólů – Over 2.5")
 
-league_code = st.selectbox("Zadej zkratku ligy (např. E0 nebo SP1):", "E0", "SP1", "D1","N1","I1","T1","F1")
+league_code = st.selectbox(
+    "Zadej zkratku ligy (např. E0 nebo SP1):",
+    ["E0", "SP1", "D1", "N1", "I1", "T1", "F1"]
+)
+
 
 df_raw = load_data_by_league(league_code)
 
