@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import shap
+
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, RocCurveDisplay, precision_recall_curve, f1_score
 from sklearn.model_selection import train_test_split
