@@ -1,78 +1,161 @@
-import os
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import numpy as np
 import joblib
-
-from utils.data_loader import load_data_by_league, get_teams_by_league, filter_team_matches, filter_h2h_matches, get_teams
+import shap
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, confusion_matrix, RocCurveDisplay, precision_recall_curve, f1_score
+from sklearn.model_selection import train_test_split
 from utils.feature_engineering_extended import generate_extended_features
+from utils.data_loader import load_data_by_league, filter_team_matches, filter_h2h_matches
 
-st.title("⚽ Predikce zápasu – Over 2.5 goals")
+st.set_page_config(layout="wide")
+st.title("⚽ Predikce počtu gólů – Over 2.5")
 
-# 📂 Výběr ligy
-leagues = ["E0", "SP1", "D1", "I1", "F1", "N1"]
-league_code = st.selectbox("Vyber ligu", leagues)
-# Nastavené prahy podle analýzy F1-score
-rf_threshold = 0.39
-xgb_threshold = 0.20
-# 📊 Načtení dat a týmů
+league_code = st.text_input("Zadej zkratku ligy (např. E0 nebo SP1):", "E0")
+
 df_raw = load_data_by_league(league_code)
-teams = get_teams(df_raw)
 
-# ⚽ Výběr týmů
-home_team = st.selectbox("Domácí tým", teams)
-away_team = st.selectbox("Hostující tým", teams)
+tems = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
+home_team = st.selectbox("Domácí tým:", tems)
+away_team = st.selectbox("Hostující tým:", tems)
 
-# 🔮 Spuštění predikce
+rf_threshold = 0.44
+xgb_threshold = 0.45
+
+features = [
+    "shooting_efficiency",
+    "elo_rating_home",
+    "elo_rating_away",
+    "momentum_score",
+    "home_xg",
+    "away_xg",
+    "xg_home_last5",
+    "xg_away_last5",
+    "corner_diff_last5",
+    "shot_on_target_diff_last5",
+    "shot_diff_last5m",
+    "fouls_diff",
+    "card_diff",
+    "boring_match_score",
+    "match_weight",
+    "h2h_goal_avg",
+    "defensive_stability",
+    "tempo_score",
+    "passivity_score",
+    "home_under25_last5",
+    "away_under25_last5",
+    "home_avg_goals_last5_home",
+    "away_avg_goals_last5_away"
+]
+
 if st.button("🔍 Spustit predikci"):
     try:
-        # ➕ Filtrování dat pro zvolené týmy + H2H zápasy
         df_filtered = pd.concat([
             filter_team_matches(df_raw, home_team),
             filter_team_matches(df_raw, away_team),
             filter_h2h_matches(df_raw, home_team, away_team)
         ]).drop_duplicates().reset_index(drop=True)
 
-        # ➕ Vygenerování rozšířených featur
-        df_ext = generate_extended_features(df_filtered)
+        df_ext = generate_extended_features(df_filtered, mode="predict")
 
-        # 🧠 Načtení modelů
-        rf_model_path = f"models/{league_code}_rf_model.joblib"
-        xgb_model_path = f"models/{league_code}_xgb_model.joblib"
-        rf_model = joblib.load(rf_model_path)
-        xgb_model = joblib.load(xgb_model_path)
+        rf_model = joblib.load(f"models/{league_code}_rf_model.joblib")
+        xgb_model = joblib.load(f"models/{league_code}_xgb_model.joblib")
 
-        # 🧾 Výběr posledního známého zápasu
         latest_home = df_ext[df_ext["HomeTeam"] == home_team].iloc[-1:]
         latest_away = df_ext[df_ext["AwayTeam"] == away_team].iloc[-1:]
+
         if latest_home.empty or latest_away.empty:
-            st.warning("Není dostatek dat pro tento zápas.")
+            st.warning("Něco chybí ve vstupních datech pro tento zápas.")
         else:
             match_row = latest_home if latest_home["Date"].values[0] > latest_away["Date"].values[0] else latest_away
-
-            # 🎯 Feature výběr – musí odpovídat tréninku!
-            features = [
-                col for col in df_ext.columns
-                if col.endswith("_form") or col.endswith("_diff")
-                or col.startswith("over25") or col.startswith("elo_rating")
-                or col.endswith("_last5") or col.endswith("_weight")
-                or col.endswith("_cards") or col.endswith("_fouls")
-                or col.startswith("xg") or col.startswith("boring")
-            ]
-
-            # 🧪 Vstupní data pro model
             X_input = match_row[features].fillna(0)
 
             rf_prob = rf_model.predict_proba(X_input)[0][1]
             xgb_prob = xgb_model.predict_proba(X_input)[0][1]
-            # Převedení pravděpodobností na finální predikci pomocí optimalizovaného thresholdu
             rf_pred = rf_prob > rf_threshold
             xgb_pred = xgb_prob > xgb_threshold
-            # 📈 Výstup
+
             st.subheader("📊 Výsledky predikce:")
-            #st.write(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_pred:.2%}**")
-            #st.write(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_pred:.2%}**")
-            
             st.markdown(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_prob*100:.2f}%** → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_prob*100:.2f}%** → {'✅ ANO' if xgb_pred else '❌ NE'}")
+
     except Exception as e:
         st.error(f"❌ Nastala chyba během predikce: {e}")
+
+# st.subheader("🤞 Analýza modelů")
+# if st.checkbox("🔍 Zobrazit analýzu modelů na validačních datech"):
+#     try:
+#         df_train = load_data_by_league(league_code)
+#         df_train_ext = generate_extended_features(df_train, mode="train")
+
+#         X = df_train_ext[features].fillna(0)
+#         y = df_train_ext["Over_2.5"]
+#         w = df_train_ext["match_weight"].fillna(1.0)
+
+#         X_train, X_test, y_train, y_test, w_train, w_test = train_test_split(
+#             X, y, w, test_size=0.2, random_state=42
+#         )
+
+#         rf_model = joblib.load(f"models/{league_code}_rf_model.joblib")
+#         xgb_model = joblib.load(f"models/{league_code}_xgb_model.joblib")
+
+#         rf_probs = rf_model.predict_proba(X_test)[:, 1]
+#         xgb_probs = xgb_model.predict_proba(X_test)[:, 1]
+#         rf_preds = rf_probs > rf_threshold
+#         xgb_preds = xgb_probs > xgb_threshold
+
+#         st.markdown("### 🎲 Random Forest – klasifikační metriky")
+#         st.text(classification_report(y_test, rf_preds))
+
+#         st.markdown("### 🚀 XGBoost – klasifikační metriky")
+#         st.text(classification_report(y_test, xgb_preds))
+
+#         st.markdown("### 🔁 Matice záměn – Random Forest")
+#         cm_rf = confusion_matrix(y_test, rf_preds)
+#         st.dataframe(pd.DataFrame(cm_rf, columns=["Pred: NE", "Pred: ANO"], index=["Skut.: NE", "Skut.: ANO"]))
+
+#         st.markdown("### 🔁 Matice záměn – XGBoost")
+#         cm_xgb = confusion_matrix(y_test, xgb_preds)
+#         st.dataframe(pd.DataFrame(cm_xgb, columns=["Pred: NE", "Pred: ANO"], index=["Skut.: NE", "Skut.: ANO"]))
+
+#         st.markdown("### 📈 ROC křivka")
+#         fig, ax = plt.subplots(figsize=(3, 1))
+#         RocCurveDisplay.from_predictions(y_test, rf_probs, name="Random Forest", ax=ax)
+#         RocCurveDisplay.from_predictions(y_test, xgb_probs, name="XGBoost", ax=ax)
+#         st.pyplot(fig)
+
+#         st.markdown("### 📊 F1-skóre podle prahové hodnoty (Random Forest a XGBoost)")
+
+#         thresholds = np.linspace(0.1, 0.9, 50)
+#         f1_scores_rf = [f1_score(y_test, rf_probs > t) for t in thresholds]
+#         f1_scores_xgb = [f1_score(y_test, xgb_probs > t) for t in thresholds]
+
+#         fig, ax = plt.subplots(figsize=(3, 1))
+#         ax.plot(thresholds, f1_scores_rf, marker='o', label="Random Forest", color="blue")
+#         ax.plot(thresholds, f1_scores_xgb, marker='o', label="XGBoost", color="orange")
+#         ax.set_xlabel("Práh")
+#         ax.set_ylabel("F1-skóre")
+#         ax.set_title("Optimalizace prahové hodnoty – F1-skóre")
+#         ax.legend()
+#         st.pyplot(fig)
+
+#         precision_rf, recall_rf, _ = precision_recall_curve(y_test, rf_probs)
+#         precision_xgb, recall_xgb, _ = precision_recall_curve(y_test, xgb_probs)
+#         fig, ax = plt.subplots(figsize=(3, 1))
+#         ax.plot(recall_rf, precision_rf, label="Random Forest", color="blue")
+#         ax.plot(recall_xgb, precision_xgb, label="XGBoost", color="orange")
+#         ax.set_xlabel("Recall")
+#         ax.set_ylabel("Precision")
+#         ax.set_title("Precision-Recall Curve")
+#         ax.legend()
+#         st.pyplot(fig)
+
+#         st.subheader("🔎 SHAP vysvětlení (Random Forest)")
+#         explainer = shap.Explainer(rf_model, X_train)
+#         shap_values = explainer(X_test[:1])
+#         fig_shap = shap.plots.waterfall(shap_values[0], show=False)
+#         st.pyplot(fig_shap)
+
+#     except Exception as e:
+#         st.error(f"Chyba v analytické sekci: {e}")
