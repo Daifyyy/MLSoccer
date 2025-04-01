@@ -231,5 +231,5 @@ def generate_extended_features(df, mode="train"):
             (df["corners_home_last5"] + df["corners_away_last5"]) * 0.1 +
             (df["xg_home_last5"] + df["xg_away_last5"]) * 0.15
         )
-    
+    df.to_csv("debug_features.csv", index=False)
     return df
