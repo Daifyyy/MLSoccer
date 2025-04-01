@@ -108,6 +108,9 @@ def generate_extended_features(df, mode="train"):
     df['away_xg'] = df['AS'] * 0.09 + df['AST'] * 0.2
     df['xg_home_last5'] = df.groupby('HomeTeam')['home_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
     df['xg_away_last5'] = df.groupby('AwayTeam')['away_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+    if mode == "predict":
+        df.loc[df['home_xg'].isna(), 'home_xg'] = df['xg_home_last5']
+        df.loc[df['away_xg'].isna(), 'away_xg'] = df['xg_away_last5']
 
     if mode == "train":
         df['boring_match_score'] = (
@@ -115,9 +118,10 @@ def generate_extended_features(df, mode="train"):
             (df['HST'] + df['AST']) * 0.1
         )
     else:
-        # Přidání dummy sloupců pro predikci
-        for col in ["shooting_efficiency", "momentum_score", "boring_match_score", "h2h_goal_avg"]:
-            df[col] = np.nan
+        df['boring_match_score'] = df['boring_match_score'].fillna(
+        (df['shots_home_last5'] + df['shots_away_last5']) * 0.05 +
+        (df['shots_on_target_home_last5'] + df['shots_on_target_away_last5']) * 0.1
+    )
 
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
@@ -129,11 +133,20 @@ def generate_extended_features(df, mode="train"):
 
     if mode == "train":
         df['h2h_goal_avg'] = df.apply(lambda row: (
-            df[((df['HomeTeam'] == row['HomeTeam']) & (df['AwayTeam'] == row['AwayTeam'])) |
-               ((df['HomeTeam'] == row['AwayTeam']) & (df['AwayTeam'] == row['HomeTeam']))]
-            .iloc[:df.index.get_loc(row.name)][['FTHG', 'FTAG']].sum(axis=1)
+            df[
+                (((df['HomeTeam'] == row['HomeTeam']) & (df['AwayTeam'] == row['AwayTeam'])) |
+                 ((df['HomeTeam'] == row['AwayTeam']) & (df['AwayTeam'] == row['HomeTeam'])))
+                & (df.index < row.name)  # použij index přímo, místo get_loc()
+            ][['FTHG', 'FTAG']].sum(axis=1)
             .rolling(window=5, min_periods=1).mean().iloc[-1]
-        ) if df.index.get_loc(row.name) >= 1 else np.nan, axis=1)
+        ) if row.name >= 1 else np.nan, axis=1)
+    
+    else:
+        # fallback pro predikci, použij průměr vstřelených gólů týmů
+        df['h2h_goal_avg'] = (
+            (df['goals_home_last5'] + df['goals_away_last5']) / 2
+        )
+
 
     if mode == "train":
         df["momentum_score"] = (df["elo_rating_home"] - df["elo_rating_away"]) + (df["xg_home_last5"] - df["xg_away_last5"])
@@ -160,5 +173,5 @@ def generate_extended_features(df, mode="train"):
             (df["corners_home_last5"] + df["corners_away_last5"]) * 0.1 +
             (df["xg_home_last5"] + df["xg_away_last5"]) * 0.15
         )
-    
+    df = df.fillna(0)
     return df
