@@ -72,24 +72,25 @@ def generate_extended_features(df, mode="train"):
                     df.groupby(team_type)[f'{side}_{metric}']
                       .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
                 )
-        
-        # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
-        needed_last5_cols = [
-            "goals_home_last5", "goals_away_last5",
-            'shots_home_last5', 'shots_away_last5',
-            'shots_on_target_home_last5', 'shots_on_target_away_last5',
-            'corners_home_last5', 'corners_away_last5',
-            'fouls_home_last5', 'fouls_away_last5',
-            'cards_home_last5', 'cards_away_last5',
-            'goals_home_last5', 'goals_away_last5',
-            'conceded_home_last5', 'conceded_away_last5',
-        ]
+                
+# Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
+    needed_last5_cols = [
+        "goals_home_last5", "goals_away_last5",
+        'shots_home_last5', 'shots_away_last5',
+        'shots_on_target_home_last5', 'shots_on_target_away_last5',
+        'corners_home_last5', 'corners_away_last5',
+        'fouls_home_last5', 'fouls_away_last5',
+        'cards_home_last5', 'cards_away_last5',
+        'goals_home_last5', 'goals_away_last5',
+        'conceded_home_last5', 'conceded_away_last5',
+    ]
 
-        for col in needed_last5_cols:
-            if col not in df.columns:
-                df[col] = np.nan  # vytvoří sloupec s NaN, pokud neexistuje
-
+    for col in needed_last5_cols:
+        if col not in df.columns:
+            df[col] = np.nan  # vytvoří sloupec s NaN, pokud neexistuje
         df[col] = df[col].fillna(0)  # nahradí zbývající NaN nulami
+        
+    
         
         
 
