@@ -63,22 +63,22 @@ def generate_extended_features(df, mode="train"):
         df[f'{side}_cards'] = df.apply(lambda row: row['HY'] + row['HR'] if side == 'home' else row['AY'] + row['AR'], axis=1)
         df[f'{side}_conceded'] = df.apply(lambda row: row['FTAG'] if side == 'home' else row['FTHG'], axis=1)
 
-    # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
-    needed_last5_cols = [
-        'shots_home_last5', 'shots_away_last5',
-        'shots_on_target_home_last5', 'shots_on_target_away_last5',
-        'corners_home_last5', 'corners_away_last5',
-        'fouls_home_last5', 'fouls_away_last5',
-        'cards_home_last5', 'cards_away_last5',
-        'goals_home_last5', 'goals_away_last5',
-        'conceded_home_last5', 'conceded_away_last5',
-    ]
+        # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
+        needed_last5_cols = [
+            'shots_home_last5', 'shots_away_last5',
+            'shots_on_target_home_last5', 'shots_on_target_away_last5',
+            'corners_home_last5', 'corners_away_last5',
+            'fouls_home_last5', 'fouls_away_last5',
+            'cards_home_last5', 'cards_away_last5',
+            'goals_home_last5', 'goals_away_last5',
+            'conceded_home_last5', 'conceded_away_last5',
+        ]
 
-    for col in needed_last5_cols:
-        if col not in df.columns:
-            df[col] = np.nan  # vytvoří sloupec s NaN, pokud neexistuje
+        for col in needed_last5_cols:
+            if col not in df.columns:
+                df[col] = np.nan  # vytvoří sloupec s NaN, pokud neexistuje
 
-    df[col] = df[col].fillna(0)  # nahradí zbývající NaN nulami
+        df[col] = df[col].fillna(0)  # nahradí zbývající NaN nulami
         
         for metric in ['goals', 'conceded', 'shots', 'shots_on_target', 'corners', 'fouls', 'cards']:
             df[f'{metric}_{side}_last5'] = (
