@@ -50,7 +50,9 @@ features = [
     "home_under25_last5",
     "away_under25_last5",
     "home_avg_goals_last5_home",
-    "away_avg_goals_last5_away"
+    "away_avg_goals_last5_away",
+    "home_goals",
+    "away_goals"
 ]
 
 if st.button("🔍 Spustit predikci"):
