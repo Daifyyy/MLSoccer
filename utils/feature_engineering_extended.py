@@ -136,18 +136,29 @@ def generate_extended_features(df, mode="train"):
         ) if df.index.get_loc(row.name) >= 1 else np.nan, axis=1)
 
     if mode == "train":
-        df["shooting_efficiency"] = (df["HST"] + df["AST"]) / (df["HS"] + df["AS"] + 1)
         df["momentum_score"] = (df["elo_rating_home"] - df["elo_rating_away"]) + (df["xg_home_last5"] - df["xg_away_last5"])
     
-    # Nové feature – pasivita, defenzivní stabilita, tempo hry
-    df["passivity_score"] = (
-        (df["HS"] + df["AS"]) * 0.05 +
-        (df["HC"] + df["AC"]) * 0.1 +
-        (df["home_xg"] + df["away_xg"]) * 0.15
-    )
 
+    
     df["defensive_stability"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
-    df["tempo_score"] = df["HS"] + df["AS"] + df["HC"] + df["AC"]
 
+    
+    # Pokročilé metriky – záleží na režimu
+    if mode == "train":
+        df["shooting_efficiency"] = (df["HST"] + df["AST"]) / (df["HS"] + df["AS"] + 1)
+        df["tempo_score"] = df["HS"] + df["AS"] + df["HC"] + df["AC"]
+        df["passivity_score"] = (
+            (df["HS"] + df["AS"]) * 0.05 +
+            (df["HC"] + df["AC"]) * 0.1 +
+            (df["home_xg"] + df["away_xg"]) * 0.15
+        )
+    else:
+        df["shooting_efficiency"] = (df["shots_on_target_home_last5"] + df["shots_on_target_away_last5"]) / (df["shots_home_last5"] + df["shots_away_last5"] + 1)
+        df["tempo_score"] = df["shots_home_last5"] + df["shots_away_last5"] + df["corners_home_last5"] + df["corners_away_last5"]
+        df["passivity_score"] = (
+            (df["shots_home_last5"] + df["shots_away_last5"]) * 0.05 +
+            (df["corners_home_last5"] + df["corners_away_last5"]) * 0.1 +
+            (df["xg_home_last5"] + df["xg_away_last5"]) * 0.15
+        )
     
     return df
