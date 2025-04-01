@@ -80,7 +80,7 @@ def generate_extended_features(df, mode="train"):
     df['fouls_diff'] = df['fouls_home_last5'] - df['fouls_away_last5']
     df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
 
-        # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
+    # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
         if mode == "train":
             for team_type in ['HomeTeam', 'AwayTeam']:
                 side = 'home' if team_type == 'HomeTeam' else 'away'
@@ -131,6 +131,7 @@ def generate_extended_features(df, mode="train"):
             # fallback pro prediction
             df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
             df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
+        
     
     # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
     needed_last5_cols = [
