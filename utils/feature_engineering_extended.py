@@ -70,15 +70,15 @@ def generate_extended_features(df, mode="train"):
                   .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
             )
 
-        df["average_scored_goals"] = (df["goals_home_last5"] + df["goals_away_last5"]) / 2
-        df["average_conceded_goals"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
+    df["average_scored_goals"] = (df["goals_home_last5"] + df["goals_away_last5"]) / 2
+    df["average_conceded_goals"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
     
-        df['goal_diff_last5'] = df['goals_home_last5'] - df['goals_away_last5']
-        df['shot_diff_last5m'] = df['shots_home_last5'] - df['shots_away_last5']
-        df['shot_on_target_diff_last5'] = df['shots_on_target_home_last5'] - df['shots_on_target_away_last5']
-        df['corner_diff_last5'] = df['corners_home_last5'] - df['corners_away_last5']
-        df['fouls_diff'] = df['fouls_home_last5'] - df['fouls_away_last5']
-        df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
+    df['goal_diff_last5'] = df['goals_home_last5'] - df['goals_away_last5']
+    df['shot_diff_last5m'] = df['shots_home_last5'] - df['shots_away_last5']
+    df['shot_on_target_diff_last5'] = df['shots_on_target_home_last5'] - df['shots_on_target_away_last5']
+    df['corner_diff_last5'] = df['corners_home_last5'] - df['corners_away_last5']
+    df['fouls_diff'] = df['fouls_home_last5'] - df['fouls_away_last5']
+    df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
     
     # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
     needed_last5_cols = [
