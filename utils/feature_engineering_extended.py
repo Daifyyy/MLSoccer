@@ -63,12 +63,80 @@ def generate_extended_features(df, mode="train"):
         df[f'{side}_cards'] = df.apply(lambda row: row['HY'] + row['HR'] if side == 'home' else row['AY'] + row['AR'], axis=1)
         df[f'{side}_conceded'] = df.apply(lambda row: row['FTAG'] if side == 'home' else row['FTHG'], axis=1)
 
+        # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
+        needed_last5_cols = [
+            'shots_home_last5', 'shots_away_last5',
+            'shots_on_target_home_last5', 'shots_on_target_away_last5',
+            'corners_home_last5', 'corners_away_last5',
+            'fouls_home_last5', 'fouls_away_last5',
+            'cards_home_last5', 'cards_away_last5',
+            'goals_home_last5', 'goals_away_last5',
+            'conceded_home_last5', 'conceded_away_last5',
+        ]
+
+        for col in needed_last5_cols:
+            if col not in df.columns:
+                df[col] = np.nan  # vytvoří sloupec s NaN, pokud neexistuje
+
+        df[col] = df[col].fillna(0)  # nahradí zbývající NaN nulami
+        
         for metric in ['goals', 'conceded', 'shots', 'shots_on_target', 'corners', 'fouls', 'cards']:
-            col_name = f'{metric}_{side}_last5'
-            df[col_name] = (
-                df.groupby(team_type)[f'{side}_{metric}']
-                  .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+            for side in ['home', 'away']:
+                team_type = 'HomeTeam' if side == 'home' else 'AwayTeam'
+                col_name = f'{metric}_{side}_last5'
+        
+                df[col_name] = (
+                    df.groupby(team_type)[f'{side}_{metric}']
+                      .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+                )
+
+
+        # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
+        if mode == "train":
+            for team_type in ['HomeTeam', 'AwayTeam']:
+                side = 'home' if team_type == 'HomeTeam' else 'away'
+                df[f'{side}_under25_last5'] = (
+                    df.groupby(team_type)
+                      .apply(lambda group: ((group['FTHG'] + group['FTAG']) <= 2).shift().rolling(6, min_periods=1).sum())
+                      .reset_index(level=0, drop=True)
+                )
+        else:
+            # fallback – podíl předchozích zápasů s málo střelami jako náhradní odhad
+            df["home_under25_last5"] = (
+                ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
+                .astype(int)
             )
+            df["away_under25_last5"] = (
+                ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
+                .astype(int)
+            )
+        
+        # Nové: forma doma/venku za poslední 3 zápasy (střely, xG)
+        if side == 'home':
+            df[f'{side}_form_shots'] = df.groupby(team_type)['HS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
+            df[f'{side}_form_xg'] = df.groupby(team_type).apply(
+                lambda g: (g['HS'] * 0.09 + g['HST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
+            ).reset_index(level=0, drop=True)
+        else:
+            df[f'{side}_form_shots'] = df.groupby(team_type)['AS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
+            df[f'{side}_form_xg'] = df.groupby(team_type).apply(
+                lambda g: (g['AS'] * 0.09 + g['AST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
+            ).reset_index(level=0, drop=True)
+            
+        # Samostatné metriky pro domácí zápasy domácího týmu a venkovní zápasy hostujícího týmu
+        if mode == "train":
+            for team_type in ['HomeTeam', 'AwayTeam']:
+                if team_type == 'HomeTeam':
+                    df['home_avg_goals_last5_home'] = df.groupby('HomeTeam')['FTHG'].transform(
+                        lambda x: x.shift().rolling(window=6, min_periods=1).mean()
+                    )
+                else:
+                    df['away_avg_goals_last5_away'] = df.groupby('AwayTeam')['FTAG'].transform(
+                        lambda x: x.shift().rolling(window=6, min_periods=1).mean()
+                    )
+        else:
+            df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
+            df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
 
     df["average_scored_goals"] = (df["goals_home_last5"] + df["goals_away_last5"]) / 2
     df["average_conceded_goals"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
@@ -84,10 +152,10 @@ def generate_extended_features(df, mode="train"):
     df['away_xg'] = df['AS'] * 0.09 + df['AST'] * 0.2
     df['xg_home_last5'] = df.groupby('HomeTeam')['home_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
     df['xg_away_last5'] = df.groupby('AwayTeam')['away_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
-
     if mode == "predict":
         df.loc[(df['home_xg'].isna()) | (df['home_xg'] == 0), 'home_xg'] = df['xg_home_last5']
         df.loc[(df['away_xg'].isna()) | (df['away_xg'] == 0), 'away_xg'] = df['xg_away_last5']
+
 
     if mode == "train":
         df['boring_match_score'] = (
@@ -99,6 +167,7 @@ def generate_extended_features(df, mode="train"):
             (df['shots_home_last5'].fillna(0) + df['shots_away_last5'].fillna(0)) * 0.05 +
             (df['shots_on_target_home_last5'].fillna(0) + df['shots_on_target_away_last5'].fillna(0)) * 0.1
         )
+
 
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
@@ -112,25 +181,33 @@ def generate_extended_features(df, mode="train"):
         df['h2h_goal_avg'] = df.apply(lambda row: (
             df[
                 (((df['HomeTeam'] == row['HomeTeam']) & (df['AwayTeam'] == row['AwayTeam'])) |
-                 ((df['HomeTeam'] == row['AwayTeam']) & (df['AwayTeam'] == row['HomeTeam']))) &
-                (df.index < row.name)
+                 ((df['HomeTeam'] == row['AwayTeam']) & (df['AwayTeam'] == row['HomeTeam'])))
+                & (df.index < row.name)  # použij index přímo, místo get_loc()
             ][['FTHG', 'FTAG']].sum(axis=1)
             .rolling(window=5, min_periods=1).mean().iloc[-1]
         ) if row.name >= 1 else np.nan, axis=1)
+    
     else:
+        # fallback pro predikci, použij průměr vstřelených gólů týmů
         df['h2h_goal_avg'] = (
             (df['goals_home_last5'] + df['goals_away_last5']) / 2
         )
 
+
+    # Momentum score (vždy se vytvoří, fallback přes fillna)
     df["momentum_score"] = (
         (df["elo_rating_home"].fillna(0) - df["elo_rating_away"].fillna(0)) +
         (df["xg_home_last5"].fillna(0) - df["xg_away_last5"].fillna(0))
     )
 
+    # Defensive stability (rovněž vytvoř vždy)
     df["defensive_stability"] = (
         df["conceded_home_last5"].fillna(0) + df["conceded_away_last5"].fillna(0)
     ) / 2
 
+
+    
+    # Pokročilé metriky – záleží na režimu
     if mode == "train":
         df["shooting_efficiency"] = (df["HST"] + df["AST"]) / (df["HS"] + df["AS"] + 1)
         df["tempo_score"] = df["HS"] + df["AS"] + df["HC"] + df["AC"]
@@ -147,5 +224,5 @@ def generate_extended_features(df, mode="train"):
             (df["corners_home_last5"] + df["corners_away_last5"]) * 0.1 +
             (df["xg_home_last5"] + df["xg_away_last5"]) * 0.15
         )
-
+    
     return df
