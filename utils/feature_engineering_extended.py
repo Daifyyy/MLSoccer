@@ -150,12 +150,17 @@ def generate_extended_features(df, mode="train"):
         )
 
 
-    if mode == "train":
-        df["momentum_score"] = (df["elo_rating_home"] - df["elo_rating_away"]) + (df["xg_home_last5"] - df["xg_away_last5"])
-    
+    # Momentum score (vždy se vytvoří, fallback přes fillna)
+    df["momentum_score"] = (
+        (df["elo_rating_home"].fillna(0) - df["elo_rating_away"].fillna(0)) +
+        (df["xg_home_last5"].fillna(0) - df["xg_away_last5"].fillna(0))
+    )
 
-    
-    df["defensive_stability"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
+    # Defensive stability (rovněž vytvoř vždy)
+    df["defensive_stability"] = (
+        df["conceded_home_last5"].fillna(0) + df["conceded_away_last5"].fillna(0)
+    ) / 2
+
 
     
     # Pokročilé metriky – záleží na režimu
