@@ -115,14 +115,15 @@ def generate_extended_features(df, mode="train"):
 
     if mode == "train":
         df['boring_match_score'] = (
-            (df['HS'] + df['AS']) * 0.05 +
-            (df['HST'] + df['AST']) * 0.1
+            (df['HS'].fillna(0) + df['AS'].fillna(0)) * 0.05 +
+            (df['HST'].fillna(0) + df['AST'].fillna(0)) * 0.1
         )
     else:
-        df['boring_match_score'] = df['boring_match_score'].fillna(
-        (df['shots_home_last5'] + df['shots_away_last5']) * 0.05 +
-        (df['shots_on_target_home_last5'] + df['shots_on_target_away_last5']) * 0.1
-    )
+        df['boring_match_score'] = (
+            (df['shots_home_last5'].fillna(0) + df['shots_away_last5'].fillna(0)) * 0.05 +
+            (df['shots_on_target_home_last5'].fillna(0) + df['shots_on_target_away_last5'].fillna(0)) * 0.1
+        )
+
 
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
