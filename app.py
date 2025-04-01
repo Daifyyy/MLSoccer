@@ -112,6 +112,7 @@ if st.button("🔍 Spustit predikci"):
             xgb_pred = xgb_prob > xgb_threshold
 
             st.subheader("📊 Výsledky predikce:")
+            st.subheader("📊 Výsledky TEST:")
             st.markdown(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_prob*100:.2f}%** → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_prob*100:.2f}%** → {'✅ ANO' if xgb_pred else '❌ NE'}")
 
