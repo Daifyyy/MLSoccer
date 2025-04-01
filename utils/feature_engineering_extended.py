@@ -109,8 +109,9 @@ def generate_extended_features(df, mode="train"):
     df['xg_home_last5'] = df.groupby('HomeTeam')['home_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
     df['xg_away_last5'] = df.groupby('AwayTeam')['away_xg'].transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
     if mode == "predict":
-        df.loc[df['home_xg'].isna(), 'home_xg'] = df['xg_home_last5']
-        df.loc[df['away_xg'].isna(), 'away_xg'] = df['xg_away_last5']
+        df.loc[(df['home_xg'].isna()) | (df['home_xg'] == 0), 'home_xg'] = df['xg_home_last5']
+        df.loc[(df['away_xg'].isna()) | (df['away_xg'] == 0), 'away_xg'] = df['xg_away_last5']
+
 
     if mode == "train":
         df['boring_match_score'] = (
