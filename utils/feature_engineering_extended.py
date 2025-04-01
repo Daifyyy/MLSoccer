@@ -126,18 +126,24 @@ def generate_extended_features(df, mode="train"):
             
         # Samostatné metriky pro domácí zápasy domácího týmu a venkovní zápasy hostujícího týmu
         if mode == "train":
-            for team_type in ['HomeTeam', 'AwayTeam']:
-                if team_type == 'HomeTeam':
-                    df['home_avg_goals_last5_home'] = df.groupby('HomeTeam')['FTHG'].transform(
-                        lambda x: x.shift().rolling(window=6, min_periods=1).mean()
-                    )
-                else:
-                    df['away_avg_goals_last5_away'] = df.groupby('AwayTeam')['FTAG'].transform(
-                        lambda x: x.shift().rolling(window=6, min_periods=1).mean()
-                    )
+            # Domácí zápasy pro HomeTeam
+            df['home_avg_goals_last5_home'] = (
+                df[df['HomeTeam'] == df['HomeTeam']]
+                .groupby('HomeTeam')['FTHG']
+                .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+            )
+        
+            # Venkovní zápasy pro AwayTeam
+            df['away_avg_goals_last5_away'] = (
+                df[df['AwayTeam'] == df['AwayTeam']]
+                .groupby('AwayTeam')['FTAG']
+                .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+            )
         else:
+            # fallback pro prediction
             df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
             df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
+
 
     df["average_scored_goals"] = (df["goals_home_last5"] + df["goals_away_last5"]) / 2
     df["average_conceded_goals"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2
