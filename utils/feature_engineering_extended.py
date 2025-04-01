@@ -81,56 +81,56 @@ def generate_extended_features(df, mode="train"):
     df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
 
     # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
-        if mode == "train":
-            for team_type in ['HomeTeam', 'AwayTeam']:
-                side = 'home' if team_type == 'HomeTeam' else 'away'
-                df[f'{side}_under25_last5'] = (
-                    df.groupby(team_type)
-                      .apply(lambda group: ((group['FTHG'] + group['FTAG']) <= 2).shift().rolling(6, min_periods=1).sum())
-                      .reset_index(level=0, drop=True)
-                )
-        else:
-            # fallback – podíl předchozích zápasů s málo střelami jako náhradní odhad
-            df["home_under25_last5"] = (
-                ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
-                .astype(int)
+    if mode == "train":
+        for team_type in ['HomeTeam', 'AwayTeam']:
+            side = 'home' if team_type == 'HomeTeam' else 'away'
+            df[f'{side}_under25_last5'] = (
+                df.groupby(team_type)
+                    .apply(lambda group: ((group['FTHG'] + group['FTAG']) <= 2).shift().rolling(6, min_periods=1).sum())
+                    .reset_index(level=0, drop=True)
             )
-            df["away_under25_last5"] = (
-                ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
-                .astype(int)
-            )
+    else:
+        # fallback – podíl předchozích zápasů s málo střelami jako náhradní odhad
+        df["home_under25_last5"] = (
+            ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
+            .astype(int)
+        )
+        df["away_under25_last5"] = (
+            ((df["shots_home_last5"].fillna(0) + df["shots_away_last5"].fillna(0)) < 15)
+            .astype(int)
+        )
         
-        # Nové: forma doma/venku za poslední 3 zápasy (střely, xG)
-        if side == 'home':
-            df[f'{side}_form_shots'] = df.groupby(team_type)['HS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
-            df[f'{side}_form_xg'] = df.groupby(team_type).apply(
-                lambda g: (g['HS'] * 0.09 + g['HST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
-            ).reset_index(level=0, drop=True)
-        else:
-            df[f'{side}_form_shots'] = df.groupby(team_type)['AS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
-            df[f'{side}_form_xg'] = df.groupby(team_type).apply(
-                lambda g: (g['AS'] * 0.09 + g['AST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
-            ).reset_index(level=0, drop=True)
+    # Nové: forma doma/venku za poslední 3 zápasy (střely, xG)
+    if side == 'home':
+        df[f'{side}_form_shots'] = df.groupby(team_type)['HS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
+        df[f'{side}_form_xg'] = df.groupby(team_type).apply(
+            lambda g: (g['HS'] * 0.09 + g['HST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
+        ).reset_index(level=0, drop=True)
+    else:
+        df[f'{side}_form_shots'] = df.groupby(team_type)['AS'].transform(lambda x: x.shift().rolling(window=3, min_periods=1).mean())
+        df[f'{side}_form_xg'] = df.groupby(team_type).apply(
+            lambda g: (g['AS'] * 0.09 + g['AST'] * 0.2).shift().rolling(window=3, min_periods=1).mean()
+        ).reset_index(level=0, drop=True)
             
-        # Samostatné metriky pro domácí zápasy domácího týmu a venkovní zápasy hostujícího týmu
-        if mode == "train":
-            # Domácí zápasy pro HomeTeam
-            df['home_avg_goals_last5_home'] = (
-                df[df['HomeTeam'] == df['HomeTeam']]
-                .groupby('HomeTeam')['FTHG']
-                .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
-            )
+    # Samostatné metriky pro domácí zápasy domácího týmu a venkovní zápasy hostujícího týmu
+    if mode == "train":
+        # Domácí zápasy pro HomeTeam
+        df['home_avg_goals_last5_home'] = (
+            df[df['HomeTeam'] == df['HomeTeam']]
+            .groupby('HomeTeam')['FTHG']
+            .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+        )
         
-            # Venkovní zápasy pro AwayTeam
-            df['away_avg_goals_last5_away'] = (
-                df[df['AwayTeam'] == df['AwayTeam']]
-                .groupby('AwayTeam')['FTAG']
-                .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
-            )
-        else:
-            # fallback pro prediction
-            df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
-            df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
+        # Venkovní zápasy pro AwayTeam
+        df['away_avg_goals_last5_away'] = (
+            df[df['AwayTeam'] == df['AwayTeam']]
+            .groupby('AwayTeam')['FTAG']
+            .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+        )
+    else:
+        # fallback pro prediction
+        df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
+        df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
         
     
     # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
