@@ -105,14 +105,14 @@ if st.button("🔍 Spustit predikci"):
             st.warning("⚠️ Nepodařilo se najít vstupní data pro predikci.")
         else:
             X_input = match_row[features].fillna(0)
-
+            st.markdown("### 🔍 Použité featury pro predikci:")
+            st.dataframe(X_input.T)  # transponované pro lepší čitelnost
             rf_prob = rf_model.predict_proba(X_input)[0][1]
             xgb_prob = xgb_model.predict_proba(X_input)[0][1]
             rf_pred = rf_prob > rf_threshold
             xgb_pred = xgb_prob > xgb_threshold
 
             st.subheader("📊 Výsledky predikce:")
-            st.subheader("📊 Výsledky TEST:")
             st.markdown(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_prob*100:.2f}%** → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_prob*100:.2f}%** → {'✅ ANO' if xgb_pred else '❌ NE'}")
 
