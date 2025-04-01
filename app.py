@@ -24,8 +24,8 @@ tems = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
 home_team = st.selectbox("Domácí tým:", tems)
 away_team = st.selectbox("Hostující tým:", tems)
 
-rf_threshold = 0.44
-xgb_threshold = 0.45
+rf_threshold = 0.32
+xgb_threshold = 0.29
 
 features = [
     "shooting_efficiency",
@@ -43,14 +43,15 @@ features = [
     "card_diff",
     "boring_match_score",
     "match_weight",
-    "h2h_goal_avg",
-    "defensive_stability",
     "tempo_score",
     "passivity_score",
-    "home_under25_last5",
-    "away_under25_last5",
-    "home_avg_goals_last5_home",
-    "away_avg_goals_last5_away"
+    "missing_corner_diff_last5",
+    "missing_shot_on_target_diff_last5",
+    "missing_shot_diff_last5m",
+    "missing_fouls_diff",
+    "missing_card_diff",
+    "missing_xg_away_last5",
+    "missing_xg_home_last5",
 ]
 
 if st.button("🔍 Spustit predikci"):
