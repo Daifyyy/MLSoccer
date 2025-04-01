@@ -63,6 +63,16 @@ def generate_extended_features(df, mode="train"):
         df[f'{side}_cards'] = df.apply(lambda row: row['HY'] + row['HR'] if side == 'home' else row['AY'] + row['AR'], axis=1)
         df[f'{side}_conceded'] = df.apply(lambda row: row['FTAG'] if side == 'home' else row['FTHG'], axis=1)
 
+        for metric in ['goals', 'conceded', 'shots', 'shots_on_target', 'corners', 'fouls', 'cards']:
+            for side in ['home', 'away']:
+                team_type = 'HomeTeam' if side == 'home' else 'AwayTeam'
+                col_name = f'{metric}_{side}_last5'
+        
+                df[col_name] = (
+                    df.groupby(team_type)[f'{side}_{metric}']
+                      .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
+                )
+        
         # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
         needed_last5_cols = [
             "goals_home_last5", "goals_away_last5",
@@ -81,15 +91,7 @@ def generate_extended_features(df, mode="train"):
 
         df[col] = df[col].fillna(0)  # nahradí zbývající NaN nulami
         
-        for metric in ['goals', 'conceded', 'shots', 'shots_on_target', 'corners', 'fouls', 'cards']:
-            for side in ['home', 'away']:
-                team_type = 'HomeTeam' if side == 'home' else 'AwayTeam'
-                col_name = f'{metric}_{side}_last5'
         
-                df[col_name] = (
-                    df.groupby(team_type)[f'{side}_{metric}']
-                      .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
-                )
 
 
         # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
