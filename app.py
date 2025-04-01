@@ -105,6 +105,14 @@ if st.button("🔍 Spustit predikci"):
             st.warning("⚠️ Nepodařilo se najít vstupní data pro predikci.")
         else:
             X_input = match_row[features].fillna(0)
+            st.subheader("🔎 Kontrola výpočtů před feature engineeringem:")
+            st.write("📌 Základní vstupy:")
+            st.dataframe(match_row[[
+                "shots_home_last5", "shots_away_last5",
+                "shot_diff_last5m",
+                "FTHG", "FTAG", "HS", "AS", "HST", "AST", "HomeTeam", "AwayTeam", "Date"
+            ]])
+
             st.markdown("### 🔍 Použité featury pro predikci:")
             st.dataframe(X_input.T)  # transponované pro lepší čitelnost
             st.markdown(f"🧾 Počet zápasů pro generování features: {len(df_filtered)}")
