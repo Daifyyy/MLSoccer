@@ -65,6 +65,7 @@ def generate_extended_features(df, mode="train"):
 
         # Fallback pro případ, že některé *_last5 metriky nevzniknou kvůli chybějícím datům
         needed_last5_cols = [
+            "goals_home_last5", "goals_away_last5",
             'shots_home_last5', 'shots_away_last5',
             'shots_on_target_home_last5', 'shots_on_target_away_last5',
             'corners_home_last5', 'corners_away_last5',
