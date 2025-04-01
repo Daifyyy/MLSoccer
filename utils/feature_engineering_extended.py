@@ -79,28 +79,6 @@ def generate_extended_features(df, mode="train"):
     df['corner_diff_last5'] = df['corners_home_last5'] - df['corners_away_last5']
     df['fouls_diff'] = df['fouls_home_last5'] - df['fouls_away_last5']
     df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
-    
-    # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
-    needed_last5_cols = [
-        "goals_home_last5", "goals_away_last5",
-        'shots_home_last5', 'shots_away_last5',
-        'shots_on_target_home_last5', 'shots_on_target_away_last5',
-        'corners_home_last5', 'corners_away_last5',
-        'fouls_home_last5', 'fouls_away_last5',
-        'cards_home_last5', 'cards_away_last5',
-        'conceded_home_last5', 'conceded_away_last5',
-    ]
-    
-    for col in needed_last5_cols:
-        if col not in df.columns:
-            df[col] = np.nan
-        df[col] = df[col].fillna(0)
-
-        
-    
-        
-        
-
 
         # Přidání počtu zápasů s under 2.5 za posledních 5 zápasů
         if mode == "train":
@@ -153,6 +131,30 @@ def generate_extended_features(df, mode="train"):
             # fallback pro prediction
             df["home_avg_goals_last5_home"] = df["goals_home_last5"].fillna(0)
             df["away_avg_goals_last5_away"] = df["goals_away_last5"].fillna(0)
+    
+    # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
+    needed_last5_cols = [
+        "goals_home_last5", "goals_away_last5",
+        'shots_home_last5', 'shots_away_last5',
+        'shots_on_target_home_last5', 'shots_on_target_away_last5',
+        'corners_home_last5', 'corners_away_last5',
+        'fouls_home_last5', 'fouls_away_last5',
+        'cards_home_last5', 'cards_away_last5',
+        'conceded_home_last5', 'conceded_away_last5',
+    ]
+    
+    for col in needed_last5_cols:
+        if col not in df.columns:
+            df[col] = np.nan
+        df[col] = df[col].fillna(0)
+
+        
+    
+        
+        
+
+
+        
 
 
     
