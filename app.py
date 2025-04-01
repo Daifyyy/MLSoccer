@@ -107,6 +107,9 @@ if st.button("🔍 Spustit predikci"):
             X_input = match_row[features].fillna(0)
             st.markdown("### 🔍 Použité featury pro predikci:")
             st.dataframe(X_input.T)  # transponované pro lepší čitelnost
+            st.markdown(f"🧾 Počet zápasů pro generování features: {len(df_filtered)}")
+
+            
             rf_prob = rf_model.predict_proba(X_input)[0][1]
             xgb_prob = xgb_model.predict_proba(X_input)[0][1]
             rf_pred = rf_prob > rf_threshold
