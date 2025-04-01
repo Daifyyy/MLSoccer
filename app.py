@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-
+from datetime import datetime 
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, RocCurveDisplay, precision_recall_curve, f1_score
 from sklearn.model_selection import train_test_split
@@ -55,24 +55,55 @@ features = [
 
 if st.button("🔍 Spustit predikci"):
     try:
+        # Načtení historických dat pro oba týmy
         df_filtered = pd.concat([
             filter_team_matches(df_raw, home_team),
             filter_team_matches(df_raw, away_team),
             filter_h2h_matches(df_raw, home_team, away_team)
         ]).drop_duplicates().reset_index(drop=True)
 
-        df_ext = generate_extended_features(df_filtered, mode="predict")
+        # Přidání budoucího (fiktivního) zápasu bez známého výsledku
+        future_match = pd.DataFrame([{
+            'HomeTeam': home_team,
+            'AwayTeam': away_team,
+            'Date': pd.to_datetime(datetime.today().date()),
+            # Zbytek sloupců vyplníme NaN, protože zatím neznáme výsledek ani statistiky
+            'FTHG': np.nan,
+            'FTAG': np.nan,
+            'HS': np.nan,
+            'AS': np.nan,
+            'HST': np.nan,
+            'AST': np.nan,
+            'HF': np.nan,
+            'AF': np.nan,
+            'HC': np.nan,
+            'AC': np.nan,
+            'HY': np.nan,
+            'AY': np.nan,
+            'HR': np.nan,
+            'AR': np.nan,
+        }])
 
-        rf_model = joblib.load(f"models/{league_code}_rf_model.joblib")
-        xgb_model = joblib.load(f"models/{league_code}_xgb_model.joblib")
+        df_pred_input = pd.concat([df_filtered, future_match], ignore_index=True)
 
-        latest_home = df_ext[df_ext["HomeTeam"] == home_team].iloc[-1:]
-        latest_away = df_ext[df_ext["AwayTeam"] == away_team].iloc[-1:]
+        # Vytvoření rozšířených features pro predikci
+        df_ext = generate_extended_features(df_pred_input, mode="predict")
 
-        if latest_home.empty or latest_away.empty:
-            st.warning("Něco chybí ve vstupních datech pro tento zápas.")
+        rf_model_path = f"models/{league_code}_rf_model.joblib"
+        xgb_model_path = f"models/{league_code}_xgb_model.joblib"
+        rf_model = joblib.load(rf_model_path)
+        xgb_model = joblib.load(xgb_model_path)
+
+        # Najdeme právě ten řádek s budoucím zápasem
+        match_row = df_ext[
+            (df_ext["HomeTeam"] == home_team) &
+            (df_ext["AwayTeam"] == away_team) &
+            (df_ext["Date"].dt.date == datetime.today().date())
+        ]
+
+        if match_row.empty:
+            st.warning("⚠️ Nepodařilo se najít vstupní data pro predikci.")
         else:
-            match_row = latest_home if latest_home["Date"].values[0] > latest_away["Date"].values[0] else latest_away
             X_input = match_row[features].fillna(0)
 
             rf_prob = rf_model.predict_proba(X_input)[0][1]
@@ -86,6 +117,7 @@ if st.button("🔍 Spustit predikci"):
 
     except Exception as e:
         st.error(f"❌ Nastala chyba během predikce: {e}")
+
 
 # st.subheader("🤞 Analýza modelů")
 # if st.checkbox("🔍 Zobrazit analýzu modelů na validačních datech"):
