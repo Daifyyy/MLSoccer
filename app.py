@@ -2,52 +2,67 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-from datetime import datetime 
+from datetime import datetime
 from utils.feature_engineering_extended import generate_extended_features
 from utils.data_loader import load_data_by_league, filter_team_matches, filter_h2h_matches
+from sklearn.metrics import f1_score
 
 st.set_page_config(layout="wide")
-st.title("⚽ Predikce počtu gólů – Over 2.5")
+st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
-league_code = st.selectbox(
-    "Zadej zkratku ligy (např. E0 nebo SP1):",
-    ["E0", "SP1", "D1", "N1", "I1", "T1", "F1"]
-)
+league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1"])
 
 df_raw = load_data_by_league(league_code)
-
-tems = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
-home_team = st.selectbox("Domácí tým:", tems)
-away_team = st.selectbox("Hostující tým:", tems)
-
-rf_threshold = 0.32
-xgb_threshold = 0.29
+teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
+home_team = st.selectbox("Domácí tým:", teams)
+away_team = st.selectbox("Hostující tým:", teams)
 
 features = [
     "shooting_efficiency",
-    "elo_rating_home",
-    "elo_rating_away",
-    "momentum_score",
-    "home_xg",
-    "away_xg",
-    "xg_home_last5",
-    "xg_away_last5",
-    "corner_diff_last5",
-    "shot_on_target_diff_last5",
-    "shot_diff_last5m",
-    "fouls_diff",
-    "card_diff",
     "boring_match_score",
-    "match_weight",
-    "tempo_score",
+    "away_xg",
+    "home_xg",
     "passivity_score",
-    "missing_corner_diff_last5",
-    "missing_shot_on_target_diff_last5",
-    "missing_shot_diff_last5m",
-    "missing_fouls_diff",
-    "missing_card_diff",
-    "missing_xg_away_last5",
+    "home_form_xg",
+    "match_weight",
+    "away_form_xg",
+    "home_form_shots",
+    "elo_rating_away",
+    "prob_under25",
+    "over25_expectation_gap",
+    "away_form_shots",
+    "momentum_score",
+    "behavior_balance",
+    "corner_diff_last5",
+    "shot_diff_last5m",
+    "elo_rating_home",
+    "tempo_score",
+    "log_odds_under25",
+    "prob_over25",
+    "fouls_diff",
+    "aggressiveness_score",
+    "card_diff",
+    "shot_on_target_diff_last5",
+    "xg_away_last5",
+    "xg_home_last5",
     "missing_xg_home_last5",
+    "missing_xg_away_last5",
+    "missing_home_form_xg",
+    "missing_home_form_shots",
+    "missing_away_form_xg",
+    "missing_away_form_shots",
+    "missing_log_odds_under25",
+    "xg_conceded_home_last5",
+    "xg_conceded_away_last5",
+    "avg_xg_conceded",
+    "xg_ratio",
+    "defensive_pressure",
+    "missing_xg_conceded_home_last5",
+    "missing_xg_conceded_away_last5",
+    "missing_avg_xg_conceded",
+    "missing_xg_ratio",
+    "missing_defensive_pressure",  
+   
 ]
 
 if st.button("🔍 Spustit predikci"):
@@ -62,29 +77,10 @@ if st.button("🔍 Spustit predikci"):
             'HomeTeam': home_team,
             'AwayTeam': away_team,
             'Date': pd.to_datetime(datetime.today().date()),
-            'FTHG': np.nan,
-            'FTAG': np.nan,
-            'HS': np.nan,
-            'AS': np.nan,
-            'HST': np.nan,
-            'AST': np.nan,
-            'HF': np.nan,
-            'AF': np.nan,
-            'HC': np.nan,
-            'AC': np.nan,
-            'HY': np.nan,
-            'AY': np.nan,
-            'HR': np.nan,
-            'AR': np.nan,
         }])
 
         df_pred_input = pd.concat([df_filtered, future_match], ignore_index=True)
         df_ext = generate_extended_features(df_pred_input, mode="predict")
-
-        rf_model_path = f"models/{league_code}_rf_model.joblib"
-        xgb_model_path = f"models/{league_code}_xgb_model.joblib"
-        rf_model = joblib.load(rf_model_path)
-        xgb_model = joblib.load(xgb_model_path)
 
         match_row = df_ext[
             (df_ext["HomeTeam"] == home_team) &
@@ -92,18 +88,64 @@ if st.button("🔍 Spustit predikci"):
             (df_ext["Date"].dt.date == datetime.today().date())
         ]
 
+        for col in features:
+            if col not in match_row.columns:
+                match_row[col] = df_ext[col].mean() if col in df_ext.columns else 0
+        
         if match_row.empty:
             st.warning("⚠️ Nepodařilo se najít vstupní data pro predikci.")
         else:
             X_input = match_row[features].fillna(0)
+            rf_model = joblib.load(f"models/{league_code}_rf_model.joblib")
+            xgb_model = joblib.load(f"models/{league_code}_xgb_model.joblib")
+
+            df_val_ext = generate_extended_features(df_filtered, mode="train")
+            X_val = df_val_ext[features].fillna(0)
+            y_val = df_val_ext["Over_2.5"]
+
+            def calculate_optimal_threshold(model):
+                y_probs = model.predict_proba(X_val)[:, 1]
+                thresholds = np.linspace(0.1, 0.9, 80)
+                best_thresh = 0.5
+                best_j_score = -1
+                for t in thresholds:
+                    y_pred = y_probs > t
+                    tp = ((y_val == 1) & (y_pred == 1)).sum()
+                    fn = ((y_val == 1) & (y_pred == 0)).sum()
+                    tn = ((y_val == 0) & (y_pred == 0)).sum()
+                    fp = ((y_val == 0) & (y_pred == 1)).sum()
+                    sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+                    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+                    j = sensitivity + specificity - 1
+                    if j > best_j_score:
+                        best_j_score = j
+                        best_thresh = t
+                return best_thresh
+
+            rf_thresh = calculate_optimal_threshold(rf_model)
+            xgb_thresh = calculate_optimal_threshold(xgb_model)
+
             rf_prob = rf_model.predict_proba(X_input)[0][1]
             xgb_prob = xgb_model.predict_proba(X_input)[0][1]
-            rf_pred = rf_prob > rf_threshold
-            xgb_pred = xgb_prob > xgb_threshold
 
-            st.subheader("📊 Výsledky predikce:")
-            st.markdown(f"🎲 Random Forest – pravděpodobnost Over 2.5: **{rf_prob*100:.2f}%** → {'✅ ANO' if rf_pred else '❌ NE'}")
-            st.markdown(f"🚀 XGBoost – pravděpodobnost Over 2.5: **{xgb_prob*100:.2f}%** → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            rf_pred = rf_prob > rf_thresh
+            xgb_pred = xgb_prob > xgb_thresh
+
+            def get_confidence(prob):
+                if prob >= 0.8:
+                    return "🔥 Vysoká"
+                elif prob >= 0.65:
+                    return "✅ Střední"
+                else:
+                    return "⚠️ Nízká"
+
+            st.subheader("📊 Predikce:")
+            st.markdown(f"**Random Forest:** {rf_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
+            st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
+            st.markdown("---")
+
+            st.markdown(f"**XGBoost:** {xgb_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
 
     except Exception as e:
-        st.error(f"❌ Nastala chyba během predikce: {e}")
+        st.error(f"Chyba při predikci: {e}")
