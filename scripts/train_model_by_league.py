@@ -166,52 +166,52 @@ print(X_train_scaled[:5])
 
 
 # === Bayesovský model ===
-class BayesianMLP(PyroModule):
-    def __init__(self, in_features, hidden_size=32):
-        super().__init__()
-        self.fc1 = PyroModule[nn.Linear](in_features, hidden_size)
-        self.fc1.weight = PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
-        self.fc1.bias = PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+# class BayesianMLP(PyroModule):
+#     def __init__(self, in_features, hidden_size=32):
+#         super().__init__()
+#         self.fc1 = PyroModule[nn.Linear](in_features, hidden_size)
+#         self.fc1.weight = PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
+#         self.fc1.bias = PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
 
-        self.out = PyroModule[nn.Linear](hidden_size, 1)
-        self.out.weight = PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
-        self.out.bias = PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
+#         self.out = PyroModule[nn.Linear](hidden_size, 1)
+#         self.out.weight = PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
+#         self.out.bias = PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
 
-        self.sigmoid = nn.Sigmoid()
+#         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, y=None):
-        x = x.clone().detach() if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=torch.float)
+#     def forward(self, x, y=None):
+#         x = x.clone().detach() if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=torch.float)
 
-        x = torch.relu(self.fc1(x))
-        logits = self.out(x).squeeze(-1)
-        probs = self.sigmoid(logits)
-        with pyro.plate("data", x.shape[0]):
-            obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
-        return probs
+#         x = torch.relu(self.fc1(x))
+#         logits = self.out(x).squeeze(-1)
+#         probs = self.sigmoid(logits)
+#         with pyro.plate("data", x.shape[0]):
+#             obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
+#         return probs
 
-model = BayesianMLP(X_train_scaled.shape[1])
+# model = BayesianMLP(X_train_scaled.shape[1])
 
-guide = pyro.infer.autoguide.AutoDiagonalNormal(model)
-optimizer = ClippedAdam({"lr": 0.01})
-svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
+# guide = pyro.infer.autoguide.AutoDiagonalNormal(model)
+# optimizer = ClippedAdam({"lr": 0.01})
+# svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
 
-X_tensor = torch.tensor(X_train_scaled, dtype=torch.float)
-y_tensor = torch.tensor(y_train.values, dtype=torch.float)
+# X_tensor = torch.tensor(X_train_scaled, dtype=torch.float)
+# y_tensor = torch.tensor(y_train.values, dtype=torch.float)
 
-print("\n🔍 Trénink Bayesovského modelu")
-pyro.clear_param_store()
-for step in range(1000):
-    loss = svi.step(X_tensor, y_tensor)
-    if step % 100 == 0:
-        print(f"Iterace {step} - Ztráta: {loss:.2f}")
+# print("\n🔍 Trénink Bayesovského modelu")
+# pyro.clear_param_store()
+# for step in range(1000):
+#     loss = svi.step(X_tensor, y_tensor)
+#     if step % 100 == 0:
+#         print(f"Iterace {step} - Ztráta: {loss:.2f}")
 
-# === Uložení ===
-pyro.get_param_store().save(f"models/{league_code}_bayes_params.pt")
-with open(f"models/{league_code}_bayes_guide.pkl", "wb") as f:
-    dill.dump(guide, f)
-joblib.dump(scaler, f"models/{league_code}_bayes_scaler.joblib")
+# # === Uložení ===
+# pyro.get_param_store().save(f"models/{league_code}_bayes_params.pt")
+# with open(f"models/{league_code}_bayes_guide.pkl", "wb") as f:
+#     dill.dump(guide, f)
+# joblib.dump(scaler, f"models/{league_code}_bayes_scaler.joblib")
 
-print("✅ Bayesovský model byl natrénován a uložen.")
+# print("✅ Bayesovský model byl natrénován a uložen.")
 
 
 

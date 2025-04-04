@@ -166,50 +166,50 @@ if st.button("🔍 Spustit predikci"):
             st.markdown(f"**XGBoost:** {xgb_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
             st.markdown("---")
+            
+            # #   === Třetí model – Bayesovský přístup ===
+            # class BayesianMLP(pyro.nn.PyroModule):
+            #     def __init__(self, in_features, hidden_size=32):
+            #         super().__init__()
+            #         self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
+            #         self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
+            #         self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+            #         self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
+            #         self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
+            #         self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
+            #         self.sigmoid = nn.Sigmoid()
 
-            # === Třetí model – Bayesovský přístup ===
-            class BayesianMLP(pyro.nn.PyroModule):
-                def __init__(self, in_features, hidden_size=32):
-                    super().__init__()
-                    self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
-                    self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
-                    self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
-                    self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
-                    self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
-                    self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
-                    self.sigmoid = nn.Sigmoid()
+            #     def forward(self, x, y=None):
+            #         x = torch.relu(self.fc1(x))
+            #         logits = self.out(x).squeeze(-1)
+            #         probs = self.sigmoid(logits)
+            #         with pyro.plate("data", x.shape[0]):
+            #             obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
+            #         return probs
 
-                def forward(self, x, y=None):
-                    x = torch.relu(self.fc1(x))
-                    logits = self.out(x).squeeze(-1)
-                    probs = self.sigmoid(logits)
-                    with pyro.plate("data", x.shape[0]):
-                        obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
-                    return probs
+            # # === Načtení scaleru a vstupu ===
+            # scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
+            # X_scaled = scaler.transform(X_input)
+            # x_tensor = torch.tensor(X_scaled, dtype=torch.float)
 
-            # === Načtení scaleru a vstupu ===
-            scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
-            X_scaled = scaler.transform(X_input)
-            x_tensor = torch.tensor(X_scaled, dtype=torch.float)
-
-            # === Inicializuj model a guide, nahraj parametry z param_store ===
-            model = BayesianMLP(x_tensor.shape[1])
-            # ✅ Povolení načítání constraintů – whitelisting _Real
-            serialization.add_safe_globals({
-                "torch.distributions.constraints._Real": constraints.real
-            })
+            # # === Inicializuj model a guide, nahraj parametry z param_store ===
+            # model = BayesianMLP(x_tensor.shape[1])
+            # # ✅ Povolení načítání constraintů – whitelisting _Real
+            # serialization.add_safe_globals({
+            #     "torch.distributions.constraints._Real": constraints.real
+            # })
 
             
-            with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
-                guide = dill.load(f)
-            # === Predikce ===
-            predictive = Predictive(model, guide=guide, num_samples=1000)
-            samples = predictive(x_tensor)
-            mean_prob = samples["obs"].float().mean().item()
+            # with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
+            #     guide = dill.load(f)
+            # # === Predikce ===
+            # predictive = Predictive(model, guide=guide, num_samples=1000)
+            # samples = predictive(x_tensor)
+            # mean_prob = samples["obs"].float().mean().item()
 
-            st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
-            st.markdown(f"Confidence: {get_confidence(mean_prob)}")
-
+            # st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
+            # st.markdown(f"Confidence: {get_confidence(mean_prob)}")
+            
 
     except Exception as e:
         st.error(f"Chyba při predikci: {e}")
