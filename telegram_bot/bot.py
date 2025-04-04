@@ -3,7 +3,7 @@ import requests
 from telegram import Update
 from telegram.ext import Updater, MessageHandler, Filters, CallbackContext
 
-BOT_TOKEN = "TVŮJ_BOT_TOKEN"  # <-- ZDE vlož svůj token z @BotFather
+BOT_TOKEN = "7821507150:AAEstbwV9hWhfz0WiryHps5ix7Bb7lmoRkY"  # <-- ZDE vlož svůj token z @BotFather
 API_URL = "https://mlsoccer.onrender.com/predict"
 
 logging.basicConfig(level=logging.INFO)
