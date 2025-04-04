@@ -140,11 +140,11 @@ if st.button("🔍 Spustit predikci"):
                     return "⚠️ Nízká"
 
             st.subheader("📊 Predikce:")
-            st.markdown(f"**Random Forest:** {rf_prob:.2%} ({rf_prob:.4f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
+            st.markdown(f"**Random Forest:** {rf_prob:.2%} ({1 / rf_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
             st.markdown("---")
 
-            st.markdown(f"**XGBoost:** {xgb_prob:.2%} ({xgb_prob:.4f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.markdown(f"**XGBoost:** {xgb_prob:.2%} ({1 / xgb_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
 
     except Exception as e:
