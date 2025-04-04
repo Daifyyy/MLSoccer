@@ -10,7 +10,7 @@ from sklearn.metrics import f1_score
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
-league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1"])
+league_code = st.selectbox("Zvol ligu:", ["E0","E1", "SP1", "D1","D2", "I1", "F1","B1","P1","T1"])
 
 df_raw = load_data_by_league(league_code)
 teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
@@ -140,11 +140,11 @@ if st.button("🔍 Spustit predikci"):
                     return "⚠️ Nízká"
 
             st.subheader("📊 Predikce:")
-            st.markdown(f"**Random Forest:** {rf_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
+            st.markdown(f"**Random Forest:** {rf_prob:.2%} ({rf_prob:.4f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
             st.markdown("---")
 
-            st.markdown(f"**XGBoost:** {xgb_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.markdown(f"**XGBoost:** {xgb_prob:.2%} ({xgb_prob:.4f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
 
     except Exception as e:
