@@ -29,11 +29,22 @@ def handle_message(update: Update, context: CallbackContext):
             update.message.reply_text(f"⚠️ Chyba serveru: {response.status_code}")
             return
 
+        
+        
         data = response.json()
+        
+        rf_percent = data['rf_prob'] * 100
+        xgb_percent = data['xgb_prob'] * 100
+
+        rf_odds = round(1 / data['rf_prob'], 2) if data['rf_prob'] > 0 else "∞"
+        xgb_odds = round(1 / data['xgb_prob'], 2) if data['xgb_prob'] > 0 else "∞"
+        
         reply = (
             f"📊 *Predikce Over 2.5* pro {data['home_team']} vs. {data['away_team']}:\n\n"
-            f"🔹 *Random Forest:* {'✅ ANO' if data['rf_pred'] else '❌ NE'} ({data['rf_prob']:.2%}) – {data['rf_conf']}\n"
-            f"🔹 *XGBoost:* {'✅ ANO' if data['xgb_pred'] else '❌ NE'} ({data['xgb_prob']:.2%}) – {data['xgb_conf']}"
+            f"🔹 *Random Forest:* {'✅ ANO' if data['rf_pred'] else '❌ NE'} "
+            f"({rf_percent:.2f} % / kurz {rf_odds}) – {data['rf_conf']}\n"
+            f"🔹 *XGBoost:* {'✅ ANO' if data['xgb_pred'] else '❌ NE'} "
+            f"({xgb_percent:.2f} % / kurz {xgb_odds}) – {data['xgb_conf']}"
         )
         update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
