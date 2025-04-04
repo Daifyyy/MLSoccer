@@ -6,15 +6,15 @@ from datetime import datetime
 from utils.feature_engineering_extended import generate_extended_features
 from utils.data_loader import load_data_by_league, filter_team_matches, filter_h2h_matches
 from sklearn.metrics import f1_score
-from pyro.infer import Predictive
-import torch
-import pyro
-import pyro.distributions as dist
-import torch.nn as nn
-from torch.distributions import constraints
-import torch.serialization
-from torch import serialization
-import dill
+# from pyro.infer import Predictive
+# import torch
+# import pyro
+# import pyro.distributions as dist
+# import torch.nn as nn
+# from torch.distributions import constraints
+# import torch.serialization
+# from torch import serialization
+# import dill
 
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
