@@ -9,3 +9,7 @@ uvicorn
 pydantic
 numpy
 python-telegram-bot==13.15
+seaborn
+pyro-ppl==1.8.6
+torch==2.1.0  # nebo jiná ověřená kompatibilní verze
+dill
