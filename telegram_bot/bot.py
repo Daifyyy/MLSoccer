@@ -1,11 +1,10 @@
-# telegram_bot/bot.py
 import logging
 import requests
 from telegram import Update
 from telegram.ext import Updater, MessageHandler, Filters, CallbackContext
 
-BOT_TOKEN = "TVŮJ_BOT_TOKEN"
-API_URL = "https://mlsoccer.onrender.com"  # <- nahradíš později
+BOT_TOKEN = "TVŮJ_BOT_TOKEN"  # <-- ZDE vlož svůj token z @BotFather
+API_URL = "https://mlsoccer.onrender.com/predict"
 
 logging.basicConfig(level=logging.INFO)
 
