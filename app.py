@@ -6,20 +6,23 @@ from datetime import datetime
 from utils.feature_engineering_extended import generate_extended_features
 from utils.data_loader import load_data_by_league, filter_team_matches, filter_h2h_matches
 from sklearn.metrics import f1_score
-# from pyro.infer import Predictive
-# import torch
-# import pyro
-# import pyro.distributions as dist
-# import torch.nn as nn
-# from torch.distributions import constraints
-# import torch.serialization
-# from torch import serialization
-# import dill
+from pyro.infer import Predictive
+import torch
+import pyro
+import pyro.distributions as dist
+import torch.nn as nn
+from torch.distributions import constraints
+import torch.serialization
+from torch import serialization
+import dill
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score, roc_curve, auc
+from sklearn.calibration import calibration_curve
 
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
-league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1"])
+league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1","E1", "T1", "D2", "N1", "B1"])
 
 df_raw = load_data_by_league(league_code)
 teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
@@ -168,47 +171,89 @@ if st.button("🔍 Spustit predikci"):
             st.markdown("---")
             
             # #   === Třetí model – Bayesovský přístup ===
-            # class BayesianMLP(pyro.nn.PyroModule):
-            #     def __init__(self, in_features, hidden_size=32):
-            #         super().__init__()
-            #         self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
-            #         self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
-            #         self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
-            #         self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
-            #         self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
-            #         self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
-            #         self.sigmoid = nn.Sigmoid()
+            class BayesianMLP(pyro.nn.PyroModule):
+                def __init__(self, in_features, hidden_size=32):
+                    super().__init__()
+                    self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
+                    self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
+                    self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+                    self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
+                    self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
+                    self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
+                    self.sigmoid = nn.Sigmoid()
 
-            #     def forward(self, x, y=None):
-            #         x = torch.relu(self.fc1(x))
-            #         logits = self.out(x).squeeze(-1)
-            #         probs = self.sigmoid(logits)
-            #         with pyro.plate("data", x.shape[0]):
-            #             obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
-            #         return probs
+                def forward(self, x, y=None):
+                    x = torch.relu(self.fc1(x))
+                    logits = self.out(x).squeeze(-1)
+                    probs = self.sigmoid(logits)
+                    with pyro.plate("data", x.shape[0]):
+                        obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
+                    return probs
 
-            # # === Načtení scaleru a vstupu ===
-            # scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
-            # X_scaled = scaler.transform(X_input)
-            # x_tensor = torch.tensor(X_scaled, dtype=torch.float)
+            # === Načtení scaleru a vstupu ===
+            scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
+            X_scaled = scaler.transform(X_input)
+            x_tensor = torch.tensor(X_scaled, dtype=torch.float)
 
-            # # === Inicializuj model a guide, nahraj parametry z param_store ===
-            # model = BayesianMLP(x_tensor.shape[1])
-            # # ✅ Povolení načítání constraintů – whitelisting _Real
-            # serialization.add_safe_globals({
-            #     "torch.distributions.constraints._Real": constraints.real
-            # })
+            # === Inicializuj model a guide, nahraj parametry z param_store ===
+            model = BayesianMLP(x_tensor.shape[1])
+            # ✅ Povolení načítání constraintů – whitelisting _Real
+            serialization.add_safe_globals({
+                "torch.distributions.constraints._Real": constraints.real
+            })
 
             
-            # with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
-            #     guide = dill.load(f)
-            # # === Predikce ===
-            # predictive = Predictive(model, guide=guide, num_samples=1000)
-            # samples = predictive(x_tensor)
-            # mean_prob = samples["obs"].float().mean().item()
+            with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
+                guide = dill.load(f)
+            # === Predikce ===
+            predictive = Predictive(model, guide=guide, num_samples=1000)
+            samples = predictive(x_tensor)
+            mean_prob = samples["obs"].float().mean().item()
 
-            # st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
-            # st.markdown(f"Confidence: {get_confidence(mean_prob)}")
+            st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
+            st.markdown(f"Confidence: {get_confidence(mean_prob)}")
+            
+            # X_val_scaled = scaler.transform(X_val)
+            # x_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float)
+
+            # # Použij Predictive na celý validační set
+            # samples = predictive(x_val_tensor)
+            # bayes_probs = samples["obs"].float().mean(0).numpy()
+            # bayes_preds = (bayes_probs > 0.5).astype(int)
+            # print(classification_report(y_val, bayes_preds))
+            
+            # st.subheader("🧪 Analýza Bayesovského modelu")
+            # st.text("Classification report:")
+            # st.text(classification_report(y_val, bayes_preds))
+            # st.text("Confusion matrix:")
+            # st.text(confusion_matrix(y_val, bayes_preds))
+            # st.text(f"Balanced accuracy: {balanced_accuracy_score(y_val, bayes_preds):.3f}")
+
+            # # === Kalibrační křivka ===
+            # prob_true, prob_pred = calibration_curve(y_val, bayes_probs, n_bins=10)
+            # fig1, ax1 = plt.subplots()
+            # ax1.plot(prob_pred, prob_true, marker="o", label="Bayes")
+            # ax1.plot([0, 1], [0, 1], linestyle="--", color="gray")
+            # ax1.set_title("Kalibrační křivka")
+            # ax1.set_xlabel("Predikovaná pravděpodobnost")
+            # ax1.set_ylabel("Skutečný podíl pozitivních")
+            # ax1.legend()
+            # st.pyplot(fig1)
+
+            # # === ROC křivka ===
+            # fpr, tpr, _ = roc_curve(y_val, bayes_probs)
+            # roc_auc = auc(fpr, tpr)
+            # fig2, ax2 = plt.subplots()
+            # ax2.plot(fpr, tpr, label=f"Bayes (AUC = {roc_auc:.2f})")
+            # ax2.plot([0, 1], [0, 1], "k--")
+            # ax2.set_xlabel("False Positive Rate")
+            # ax2.set_ylabel("True Positive Rate")
+            # ax2.set_title("ROC křivka Bayes modelu")
+            # ax2.legend()
+            # st.pyplot(fig2)
+
+
+            
             
 
     except Exception as e:
