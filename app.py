@@ -162,11 +162,11 @@ if st.button("🔍 Spustit predikci"):
                     return "⚠️ Nízká"
 
             st.subheader("📊 Predikce:")
-            st.markdown(f"**Random Forest:** {rf_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
+            st.markdown(f"**Random Forest:** {rf_prob * 100:.2f}% ({1 / rf_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
             st.markdown("---")
 
-            st.markdown(f"**XGBoost:** {xgb_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.markdown(f"**XGBoost:** {xgb_prob * 100:.2f}% ({1 / xgb_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
             st.markdown("---")
             
@@ -195,23 +195,21 @@ if st.button("🔍 Spustit predikci"):
             X_scaled = scaler.transform(X_input)
             x_tensor = torch.tensor(X_scaled, dtype=torch.float)
 
-            # === Inicializuj model a guide, nahraj parametry z param_store ===
+            # === Inicializuj model a guide, nahraj parametry ===
             model = BayesianMLP(x_tensor.shape[1])
-            # ✅ Povolení načítání constraintů – whitelisting _Real
-            serialization.add_safe_globals({
-                "torch.distributions.constraints._Real": constraints.real
-            })
 
-            
+            # ✅ Načtení guide z pickle bez constraint whitelistingu (není potřeba s dill)
             with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
                 guide = dill.load(f)
+
             # === Predikce ===
             predictive = Predictive(model, guide=guide, num_samples=1000)
             samples = predictive(x_tensor)
             mean_prob = samples["obs"].float().mean().item()
 
-            st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
+            st.markdown(f"**Bayesovský model:** {mean_prob * 100:.2f}% ({1 / mean_prob:.2f}) pravděpodobnost Over 2.5")
             st.markdown(f"Confidence: {get_confidence(mean_prob)}")
+
             
             # X_val_scaled = scaler.transform(X_val)
             # x_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float)
