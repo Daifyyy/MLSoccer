@@ -18,6 +18,10 @@ import dill
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score, roc_curve, auc
 from sklearn.calibration import calibration_curve
+import json
+
+
+
 
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
@@ -162,21 +166,22 @@ if st.button("🔍 Spustit predikci"):
                     return "⚠️ Nízká"
 
             st.subheader("📊 Predikce:")
-            st.markdown(f"**Random Forest:** {rf_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
+            st.markdown(f"**Random Forest:** {rf_prob * 100:.2f}% ({1 / rf_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
             st.markdown("---")
 
-            st.markdown(f"**XGBoost:** {xgb_prob:.2%} pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
+            st.markdown(f"**XGBoost:** {xgb_prob * 100:.2f}% ({1 / xgb_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
             st.markdown("---")
             
-            # #   === Třetí model – Bayesovský přístup ===
+            # === Bayesovský model ===
             class BayesianMLP(pyro.nn.PyroModule):
-                def __init__(self, in_features, hidden_size=32):
+                def __init__(self, in_features, hidden_size=64,dropout_rate=0.2):
                     super().__init__()
                     self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
                     self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
                     self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+                    self.dropout = nn.Dropout(p=dropout_rate) 
                     self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
                     self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
                     self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
@@ -184,73 +189,129 @@ if st.button("🔍 Spustit predikci"):
 
                 def forward(self, x, y=None):
                     x = torch.relu(self.fc1(x))
+                    x = self.dropout(x)
                     logits = self.out(x).squeeze(-1)
                     probs = self.sigmoid(logits)
                     with pyro.plate("data", x.shape[0]):
                         obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
                     return probs
 
+            # === Načtení seznamu očekávaných featur ===
+            with open(f"models/{league_code}_bayes_features.json") as f:
+                expected_features = json.load(f)
+
+            # === Porovnání se vstupem ===
+            missing = [col for col in expected_features if col not in X_input.columns]
+            extra = [col for col in X_input.columns if col not in expected_features]
+
+            if missing:
+                st.warning(f"⚠️ Chybějící featury v predikčních datech: {missing}")
+                for col in missing:
+                    X_input[col] = np.nan  # doplníme NaNy
+
+            if extra:
+                st.warning(f"⚠️ Extra featury, které nebyly při trénování: {extra}")
+
+            # === Zarovnání pořadí sloupců ===
+            X_input = X_input[expected_features]
+            
+            
             # === Načtení scaleru a vstupu ===
             scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
             X_scaled = scaler.transform(X_input)
             x_tensor = torch.tensor(X_scaled, dtype=torch.float)
 
-            # === Inicializuj model a guide, nahraj parametry z param_store ===
-            model = BayesianMLP(x_tensor.shape[1])
-            # ✅ Povolení načítání constraintů – whitelisting _Real
-            serialization.add_safe_globals({
-                "torch.distributions.constraints._Real": constraints.real
-            })
-
-            
+            # === Inicializace modelu a načtení guide ===
+            model = BayesianMLP(x_tensor.shape[1], hidden_size=64, dropout_rate=0.2)
             with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
                 guide = dill.load(f)
-            # === Predikce ===
-            predictive = Predictive(model, guide=guide, num_samples=1000)
+            print("❓ X_input shape:", X_input.shape)
+            print("🧠 Počet featur použitých při tréninku:", model.fc1.weight.shape[1])
+
+            # === Predikce pomocí posterior predictive sampling ===
+            predictive = Predictive(model, guide=guide, num_samples=3000, return_sites=["obs"])
             samples = predictive(x_tensor)
-            mean_prob = samples["obs"].float().mean().item()
+            # Výsledek: [num_samples, batch_size]
+            y_pred_samples = samples["obs"].float().numpy()
+            mean_prob = y_pred_samples.mean(axis=0)
+            lower_ci = np.percentile(y_pred_samples, 10, axis=0)
+            upper_ci = np.percentile(y_pred_samples, 90, axis=0)
+            # === Funkce pro interpretaci výsledku ===
+            def classify_with_uncertainty(mean, lower, upper, threshold=0.5, tolerance=0.15):
+                if upper < threshold - tolerance:
+                    return "Under (s vysokou důvěrou)"
+                elif lower > threshold + tolerance:
+                    return "Over (s vysokou důvěrou)"
+                else:
+                    return "Neurčité / Vyrovnané"
+            # Převod na skalár:
+            if isinstance(mean_prob, np.ndarray):
+                mean_prob = float(mean_prob) if mean_prob.size == 1 else mean_prob  # nebo .item()
+                
+            lower_ci = float(lower_ci)
+            upper_ci = float(upper_ci)
+            # === Výstup pro jeden zápas ===
+            st.subheader("📊 Výsledek Bayesovského modelu")
+            st.markdown(f"**Pravděpodobnost Over 2.5**: {mean_prob * 100:.2f}%")
+            st.markdown(f"**Interval spolehlivosti (10–90 %)**: {lower_ci * 100:.1f}% – {upper_ci * 100:.1f}%")
+            st.markdown(f"🧠 **Klasifikace**: {classify_with_uncertainty(mean_prob, lower_ci, upper_ci)}")
+            st.write(X_input)
 
-            st.markdown(f"**Bayesovský model:** {mean_prob:.2%} pravděpodobnost Over 2.5")
-            st.markdown(f"Confidence: {get_confidence(mean_prob)}")
-            
-            # X_val_scaled = scaler.transform(X_val)
-            # x_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float)
+            plt.hist(y_pred_samples.flatten(), bins=50)
+            plt.title("Distribuce predikovaných pravděpodobností")
+            plt.show()
+            # === Analýza na validační sadě ===
+            X_val_scaled = scaler.transform(X_val)
+            x_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float)
+            samples_val = predictive(x_val_tensor)
+            y_val_pred_samples = samples_val["obs"].float().numpy()
+            bayes_probs = y_val_pred_samples.mean(axis=0)
+            ci_widths = np.percentile(y_val_pred_samples, 90, axis=0) - np.percentile(y_val_pred_samples, 10, axis=0)
+            bayes_preds = (bayes_probs > 0.5).astype(int)
 
-            # # Použij Predictive na celý validační set
-            # samples = predictive(x_val_tensor)
-            # bayes_probs = samples["obs"].float().mean(0).numpy()
-            # bayes_preds = (bayes_probs > 0.5).astype(int)
-            # print(classification_report(y_val, bayes_preds))
-            
-            # st.subheader("🧪 Analýza Bayesovského modelu")
-            # st.text("Classification report:")
-            # st.text(classification_report(y_val, bayes_preds))
-            # st.text("Confusion matrix:")
-            # st.text(confusion_matrix(y_val, bayes_preds))
-            # st.text(f"Balanced accuracy: {balanced_accuracy_score(y_val, bayes_preds):.3f}")
+            # === Vyhodnocení ===
+            st.subheader("🧪 Evaluace Bayesovského modelu")
+            st.text("Classification report:")
+            st.text(classification_report(y_val, bayes_preds))
+            st.text("Confusion matrix:")
+            st.text(confusion_matrix(y_val, bayes_preds))
+            st.text(f"Balanced accuracy: {balanced_accuracy_score(y_val, bayes_preds):.3f}")
+            st.text(f"📏 Průměrná šířka CI (80%): {ci_widths.mean():.3f}")
 
-            # # === Kalibrační křivka ===
-            # prob_true, prob_pred = calibration_curve(y_val, bayes_probs, n_bins=10)
-            # fig1, ax1 = plt.subplots()
-            # ax1.plot(prob_pred, prob_true, marker="o", label="Bayes")
-            # ax1.plot([0, 1], [0, 1], linestyle="--", color="gray")
-            # ax1.set_title("Kalibrační křivka")
-            # ax1.set_xlabel("Predikovaná pravděpodobnost")
-            # ax1.set_ylabel("Skutečný podíl pozitivních")
-            # ax1.legend()
-            # st.pyplot(fig1)
+            # === Kalibrační křivka ===
+            prob_true, prob_pred = calibration_curve(y_val, bayes_probs, n_bins=10)
+            fig1, ax1 = plt.subplots()
+            ax1.plot(prob_pred, prob_true, marker="o", label="Bayes")
+            ax1.plot([0, 1], [0, 1], linestyle="--", color="gray")
+            ax1.set_title("Kalibrační křivka")
+            ax1.set_xlabel("Predikovaná pravděpodobnost")
+            ax1.set_ylabel("Skutečný podíl pozitivních")
+            ax1.legend()
+            st.pyplot(fig1)
 
-            # # === ROC křivka ===
-            # fpr, tpr, _ = roc_curve(y_val, bayes_probs)
-            # roc_auc = auc(fpr, tpr)
-            # fig2, ax2 = plt.subplots()
-            # ax2.plot(fpr, tpr, label=f"Bayes (AUC = {roc_auc:.2f})")
-            # ax2.plot([0, 1], [0, 1], "k--")
-            # ax2.set_xlabel("False Positive Rate")
-            # ax2.set_ylabel("True Positive Rate")
-            # ax2.set_title("ROC křivka Bayes modelu")
-            # ax2.legend()
-            # st.pyplot(fig2)
+            # === ROC křivka ===
+            fpr, tpr, _ = roc_curve(y_val, bayes_probs)
+            roc_auc = auc(fpr, tpr)
+            fig2, ax2 = plt.subplots()
+            ax2.plot(fpr, tpr, label=f"Bayes (AUC = {roc_auc:.2f})")
+            ax2.plot([0, 1], [0, 1], "k--")
+            ax2.set_xlabel("False Positive Rate")
+            ax2.set_ylabel("True Positive Rate")
+            ax2.set_title("ROC křivka Bayes modelu")
+            ax2.legend()
+            st.pyplot(fig2)
+
+            # === Největší přehmaty modelu s malým intervalem ===
+            df_val = pd.DataFrame({
+                "true": y_val,
+                "pred": bayes_preds,
+                "prob": bayes_probs,
+                "ci_width": ci_widths
+            })
+            bad_cases = df_val[(df_val["true"] != df_val["pred"]) & (df_val["ci_width"] < 0.2)]
+            if not bad_cases.empty:
+                st.subheader("⚠️ Falešné predikce s vysokou jistotou")
+                st.dataframe(bad_cases.head(10))
 
 
             

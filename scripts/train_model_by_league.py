@@ -22,6 +22,8 @@ from sklearn.preprocessing import StandardScaler
 import dill
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import roc_curve, auc
+from pyro.infer.autoguide import AutoLowRankMultivariateNormal
+import json
 
 # === Vstup od uživatele ===
 league_code = input("Zadej zkratku ligy (např. E0 nebo SP1): ")
@@ -91,7 +93,8 @@ features = [
 X_train = df_train_ext[features].fillna(0)
 y_train = df_train_ext["Over_2.5"]
 w_train = df_train_ext["match_weight"].fillna(1.0)
-
+with open(f"models/{league_code}_bayes_features.json", "w") as f:
+    json.dump(list(X_train.columns), f)
 
 
 X_test = df_test_ext[features].fillna(0)
@@ -154,7 +157,8 @@ for depth in [3, 6,10]:
 # === Vytvoření tensorů ===
 assert not X_train.isnull().any().any()
 assert not y_train.isnull().any()
-
+print("\n📊 Rozsah vstupních featur (před škálováním):")
+print(X_train.describe().T[["min", "max", "mean", "std"]])
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
@@ -162,18 +166,19 @@ X_test_scaled = scaler.transform(X_test)
 X_tensor = torch.tensor(X_train_scaled, dtype=torch.float)
 y_tensor = torch.tensor(y_train.values.reshape(-1, 1), dtype=torch.float)
 
-print(X_train_scaled[:5])
-
+#print(X_train_scaled[:5])
 
 
 
 #=== Bayesovský model ===
 class BayesianMLP(PyroModule):
-    def __init__(self, in_features, hidden_size=32):
+    def __init__(self, in_features, hidden_size=64, dropout_rate=0.2):
         super().__init__()
         self.fc1 = PyroModule[nn.Linear](in_features, hidden_size)
         self.fc1.weight = PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
         self.fc1.bias = PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         self.out = PyroModule[nn.Linear](hidden_size, 1)
         self.out.weight = PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
@@ -181,37 +186,48 @@ class BayesianMLP(PyroModule):
 
         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, y=None):
+    def forward(self, x, y=None, weight=None):
         x = x.clone().detach() if isinstance(x, torch.Tensor) else torch.tensor(x, dtype=torch.float)
-
         x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
         logits = self.out(x).squeeze(-1)
         probs = self.sigmoid(logits)
         with pyro.plate("data", x.shape[0]):
-            obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
+            if y is not None and weight is not None:
+                pyro.sample("obs", dist.Bernoulli(probs), obs=y, infer={"scale": weight})
+            elif y is not None:
+                pyro.sample("obs", dist.Bernoulli(probs), obs=y)
         return probs
 
-model = BayesianMLP(X_train_scaled.shape[1])
 
-guide = pyro.infer.autoguide.AutoDiagonalNormal(model)
-optimizer = ClippedAdam({"lr": 0.01})
-svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
+
 
 X_tensor = torch.tensor(X_train_scaled, dtype=torch.float)
 y_tensor = torch.tensor(y_train.values, dtype=torch.float)
+w_tensor = torch.tensor(w_train.values, dtype=torch.float)
 
+# === Model, guide, optimizér ===
+model = BayesianMLP(X_train_scaled.shape[1], hidden_size=64, dropout_rate=0.2)
+guide = AutoLowRankMultivariateNormal(model, rank=10)
+optimizer = ClippedAdam({"lr": 0.01})
+svi = SVI(model, guide, optimizer, loss=Trace_ELBO())
+
+# === Trénink ===
 print("\n🔍 Trénink Bayesovského modelu")
 pyro.clear_param_store()
-for step in range(1000):
-    loss = svi.step(X_tensor, y_tensor)
+for step in range(3000):
+    loss = svi.step(X_tensor, y_tensor, weight=w_tensor)
     if step % 100 == 0:
         print(f"Iterace {step} - Ztráta: {loss:.2f}")
 
-# === Uložení ===
+# === Uložení modelu ===
+os.makedirs("models", exist_ok=True)
 pyro.get_param_store().save(f"models/{league_code}_bayes_params.pt")
 with open(f"models/{league_code}_bayes_guide.pkl", "wb") as f:
     dill.dump(guide, f)
 joblib.dump(scaler, f"models/{league_code}_bayes_scaler.joblib")
+
+
 
 print("✅ Bayesovský model byl natrénován a uložen.")
 

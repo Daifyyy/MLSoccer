@@ -60,6 +60,8 @@ def generate_extended_features(df, mode="train"):
     # Výpočet Elo
     elo = calculate_elo_rating(df)
     df['elo_rating_home'], df['elo_rating_away'] = zip(*elo)
+    df["elo_rating_home"] = df["elo_rating_home"] - 1500
+    df["elo_rating_away"] = df["elo_rating_away"] - 1500
 
     if mode == "train":
         df['Over_2.5'] = (df['FTHG'] + df['FTAG']) > 2.5
@@ -234,6 +236,10 @@ def generate_extended_features(df, mode="train"):
         (df["elo_rating_home"].fillna(0) - df["elo_rating_away"].fillna(0)) +
         (df["xg_home_last5"].fillna(0) - df["xg_away_last5"].fillna(0))
     )
+    df["momentum_score"] = (
+        np.sign(df["momentum_score"].clip(-200, 200)) *
+        np.log1p(np.abs(df["momentum_score"].clip(-200, 200)))
+    )
 
 
 
@@ -257,7 +263,7 @@ def generate_extended_features(df, mode="train"):
         )
         
     # Kombinace agresivity a pasivity obou týmů
-    df["aggressiveness_score"] = df["fouls_diff"].abs() + df["card_diff"].abs()
+    df["aggressiveness_score"] = (df["fouls_diff"].abs() + df["card_diff"].abs()).clip(0, 10)
     df["behavior_balance"] = df["passivity_score"].fillna(0) + df["aggressiveness_score"].fillna(0)
     
     
@@ -287,6 +293,7 @@ def generate_extended_features(df, mode="train"):
     df["xg_conceded_away_last5"] = df["shots_home_last5"] * 0.09 + df["shots_on_target_home_last5"] * 0.2
     df["avg_xg_conceded"] = (df["xg_conceded_home_last5"] + df["xg_conceded_away_last5"]) / 2
     df["xg_ratio"] = (df["xg_home_last5"] + df["xg_away_last5"]) / (df["avg_xg_conceded"] + 0.1)
+    df["xg_ratio"] = np.log1p(df["xg_ratio"].clip(0, 10))
     df["defensive_pressure"] = df["fouls_diff"] + df["card_diff"]
     
     df["missing_xg_conceded_home_last5"] = df["xg_conceded_home_last5"].isna().astype(int)
