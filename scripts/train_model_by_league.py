@@ -1,5 +1,5 @@
 from features_list import feature_cols
-
+import lightgbm as lgb
 import pandas as pd
 import numpy as np
 import os
@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 import optuna
-
+from sklearn.feature_selection import SelectFromModel
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier, early_stopping
@@ -28,6 +28,7 @@ def prepare_data(league_code):
 
     df_train_ext = generate_features(df_train, mode="train")
     df_test_ext = generate_features(df_test, mode="train")
+    #print(df_train_ext[["HomeTeam", "AwayTeam", "Date", "h2h_avg_goals_total", "h2h_over25_ratio"]].tail(10))
 
     X_train = df_train_ext[feature_cols].fillna(0)
     X_test = df_test_ext[feature_cols].fillna(0)
@@ -37,6 +38,19 @@ def prepare_data(league_code):
 
     w_train = df_train_ext["match_weight"]
     w_test = df_train_ext["match_weight"]
+
+    # === Feature selection pomocí LightGBM ===
+    selector_model = LGBMClassifier(n_estimators=100, random_state=42)
+    selector_model.fit(X_train, y_train)
+    selector = SelectFromModel(selector_model, threshold="median", prefit=True)
+    X_train_selected = selector.transform(X_train)
+    X_test_selected = selector.transform(X_test)
+
+    selected_features = X_train.columns[selector.get_support()] if hasattr(X_train, 'columns') else [f"f{i}" for i in range(X_train_selected.shape[1])]
+    print(f"📉 Po výběru feature shape trénovacích dat: {X_train_selected.shape}")
+    print(f"📋 Vybrané feature: {selected_features}")
+
+
 
     return X_train, X_test, y_train, y_test, w_train, w_test
 
@@ -135,7 +149,7 @@ def train_and_save_models(league_code):
         X_train, y_train,
         eval_set=[(X_test, y_test)],
         eval_metric="auc",
-        callbacks=[early_stopping(20)],
+        callbacks=[early_stopping(20), lgb.log_evaluation(0)],
     )
     joblib.dump(lgb_model, f"models/{league_code}_lgb_model.joblib")
     print(f"✅ Model uložen se {len(X_train.columns)} featurami.")

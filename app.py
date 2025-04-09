@@ -15,7 +15,6 @@ from utils.data_loader import load_data_by_league, filter_team_matches, filter_h
 def load_model(path):
     if path in sys.modules:
         importlib.reload(sys.modules[path])
-    return joblib.load(path)
 
 def get_model_importance(model, feature_cols):
     try:
@@ -132,34 +131,34 @@ if st.button("🔍 Spustit predikci"):
             st.markdown(f"Confidence: {get_confidence(lgb_prob)} (threshold: {lgb_thresh:.2f})")
             st.markdown("---")
 
-            st.subheader(f"🧠 SHAP vysvětlení predikce ({shap_pred_model})")
-            try:
-                import shap
-                import matplotlib.pyplot as plt
-                model_for_shap = {
-                    "LightGBM": lgb_model,
-                    "XGBoost": xgb_model,
-                    "Random Forest": rf_model
-                }.get(shap_pred_model, None)
+            # st.subheader(f"🧠 SHAP vysvětlení predikce ({shap_pred_model})")
+            # try:
+            #     import shap
+            #     import matplotlib.pyplot as plt
+            #     model_for_shap = {
+            #         "LightGBM": lgb_model,
+            #         "XGBoost": xgb_model,
+            #         "Random Forest": rf_model
+            #     }.get(shap_pred_model, None)
 
-                if model_for_shap is not None:
-                    explainer = shap.Explainer(model_for_shap)
-                    shap_values = explainer(X_input)
+            #     if model_for_shap is not None:
+            #         explainer = shap.Explainer(model_for_shap)
+            #         shap_values = explainer(X_input)
 
-                    fig = plt.figure()
-                    shap.plots.waterfall(shap_values[0], max_display=15, show=False)
-                    st.pyplot(fig)
-                else:
-                    st.warning("Model není dostupný pro SHAP analýzu.")
-            except Exception as e:
-                st.warning(f"⚠️ Nelze zobrazit SHAP vysvětlení: {e}")
+            #         fig = plt.figure()
+            #         shap.plots.waterfall(shap_values[0], max_display=15, show=False)
+            #         st.pyplot(fig)
+            #     else:
+            #         st.warning("Model není dostupný pro SHAP analýzu.")
+            # except Exception as e:
+            #     st.warning(f"⚠️ Nelze zobrazit SHAP vysvětlení: {e}")
 
     except Exception as e:
         st.error(f"Chyba při predikci: {e}")
 
 # === ANALÝZA MODELU ===
-st.markdown("---")
-st.header("🔎 Analýza modelu")
+# st.markdown("---")
+# st.header("🔎 Analýza modelu")
 
 model_paths = {
     "LightGBM": f"models/{league_code}_lgb_model.joblib",
@@ -173,33 +172,33 @@ thresholds_display = {
     "Random Forest": rf_thresh
 }
 
-try:
-    selected_model_path = model_paths[selected_model]
-    model = joblib.load(selected_model_path)
-    importances, features_used = get_model_importance(model, feature_cols)
+# try:
+#     selected_model_path = model_paths[selected_model]
+#     model = joblib.load(selected_model_path)
+#     importances, features_used = get_model_importance(model, feature_cols)
 
-    st.subheader(f"🎯 Feature importance pro {selected_model}")
-    if importances is None:
-        st.warning("Feature importance není dostupná pro vybraný model.")
-    else:
-        fi_df = pd.DataFrame({
-            "Feature": features_used,
-            "Importance": importances
-        }).sort_values(by="Importance", ascending=False)
+#     st.subheader(f"🎯 Feature importance pro {selected_model}")
+#     if importances is None:
+#         st.warning("Feature importance není dostupná pro vybraný model.")
+#     else:
+#         fi_df = pd.DataFrame({
+#             "Feature": features_used,
+#             "Importance": importances
+#         }).sort_values(by="Importance", ascending=False)
 
-        st.dataframe(fi_df.head(20))
+#         st.dataframe(fi_df.head(20))
 
-        st.subheader("🔢 Top 20 vlivných proměnných")
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(10, 6))
-        top_fi = fi_df.head(20)
-        ax.barh(top_fi["Feature"], top_fi["Importance"])
-        ax.invert_yaxis()
-        ax.set_xlabel("Důležitost")
-        ax.set_title(f"{selected_model} – Feature Importance")
-        st.pyplot(fig)
+#         st.subheader("🔢 Top 20 vlivných proměnných")
+#         import matplotlib.pyplot as plt
+#         fig, ax = plt.subplots(figsize=(10, 6))
+#         top_fi = fi_df.head(20)
+#         ax.barh(top_fi["Feature"], top_fi["Importance"])
+#         ax.invert_yaxis()
+#         ax.set_xlabel("Důležitost")
+#         ax.set_title(f"{selected_model} – Feature Importance")
+#         st.pyplot(fig)
 
-    st.info(f"Použitý threshold pro {selected_model}: **{thresholds_display[selected_model]:.2f}**")
+#     st.info(f"Použitý threshold pro {selected_model}: **{thresholds_display[selected_model]:.2f}**")
 
-except Exception as e:
-    st.error(f"❌ Chyba při načítání modelu nebo feature importance: {e}")
+# except Exception as e:
+#     st.error(f"❌ Chyba při načítání modelu nebo feature importance: {e}")

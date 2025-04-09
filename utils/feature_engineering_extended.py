@@ -163,8 +163,28 @@ def generate_features(df, mode="train"):
                 .transform(lambda x: x.shift(1).where(mask).rolling(10, min_periods=1).mean())
             )
     
-    
-    
+# === H2H metriky ===
+    df["h2h_avg_goals_total"] = np.nan
+    df["h2h_over25_ratio"] = np.nan
+
+    for idx, row in df.iterrows():
+        home = row["HomeTeam"]
+        away = row["AwayTeam"]
+        date = row["Date"]
+
+        past_h2h = df[
+            (
+                ((df["HomeTeam"].str.strip() == home) & (df["AwayTeam"].str.strip() == away)) |
+                ((df["HomeTeam"].str.strip() == away) & (df["AwayTeam"].str.strip() == home))
+            ) & (df["Date"] < date)
+        ].sort_values("Date").tail(5)
+
+        if len(past_h2h) >= 2:
+            goals = past_h2h["FTHG"] + past_h2h["FTAG"]
+            df.at[idx, "h2h_avg_goals_total"] = goals.mean()
+            df.at[idx, "h2h_over25_ratio"] = (goals > 2.5).mean()
+            #print(f"H2H {home} vs {away}: zápasů = {len(past_h2h)}, průměr gólů = {goals.mean():.2f}, over25 = {df.at[idx, 'h2h_over25_ratio']:.2f}")
+
     final_features = [
         "home_team_target_enc", "away_team_target_enc",
         "home_team_avg_goals_enc", "away_team_avg_goals_enc",
@@ -182,8 +202,8 @@ def generate_features(df, mode="train"):
     feature_block_derived = [f"{metric}_{side}" for metric in ["shot_conversion_rate", "attacking_pressure", "goal_per_shot_on_target"] for side in sides]
     feature_block_diffs = [
         "tempo_score","conversion_rate_diff", "attacking_pressure_diff", "goal_per_shot_on_target_diff",
-        "sample_uncertainty_weight","home_advantage_weight","recent_goal_variance_weight","style_chaos_diff","disciplinary_index_diff"
-        
+        "sample_uncertainty_weight","home_advantage_weight","recent_goal_variance_weight","style_chaos_diff","disciplinary_index_diff",
+        "h2h_avg_goals_total"
         
         ]
 

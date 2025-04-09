@@ -12,5 +12,6 @@ feature_cols = [
     "home_advantage_weight",
     "recent_goal_variance_weight",
     "style_chaos_diff",
-    "disciplinary_index_diff"
+    "disciplinary_index_diff",
+    "h2h_avg_goals_total"
 ]
