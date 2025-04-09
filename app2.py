@@ -11,7 +11,7 @@ import torch
 import pyro
 import pyro.distributions as dist
 import torch.nn as nn
-from torch.distributions import constraints
+import pyro.poutine as poutine
 import torch.serialization
 from torch import serialization
 import dill
@@ -19,14 +19,47 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report, confusion_matrix, balanced_accuracy_score, roc_curve, auc
 from sklearn.calibration import calibration_curve
 import json
+from pyro.infer.autoguide import AutoDiagonalNormal
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+from torch.serialization import safe_globals
+from torch.distributions import constraints as torch_constraints
+from pyro.distributions import constraints as pyro_constraints
 
+def plot_confidence_vs_accuracy(y_pred_samples, y_true, threshold=0.5):
+    """
+    Vykreslí scatter plot:
+    - osa X: průměrná pravděpodobnost
+    - osa Y: šířka CI
+    - barva: správná vs. špatná predikce
+    """
+    mean_probs = y_pred_samples.mean(axis=0)
+    lower = np.percentile(y_pred_samples, 10, axis=0)
+    upper = np.percentile(y_pred_samples, 90, axis=0)
+    ci_width = upper - lower
+
+    preds = (mean_probs > threshold).astype(int)
+    correct = preds == y_true
+
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x=mean_probs, y=ci_width, hue=correct, palette={True: "green", False: "red"})
+    plt.axhline(0.5, color="gray", linestyle="--", label="CI = 0.5")
+    plt.axvline(threshold, color="gray", linestyle="--", label=f"Threshold = {threshold}")
+    plt.title("Vztah mezi jistotou (šířkou CI), predikcí a přesností")
+    plt.xlabel("Predikovaná pravděpodobnost Over 2.5")
+    plt.ylabel("Šířka intervalu spolehlivosti (10–90 %)")
+    plt.legend(title="Správná predikce")
+    plt.tight_layout()
+    fig = plt.gcf()  # aktuální figure
+    st.pyplot(fig)
 
 
 
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
-league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1","E1", "T1", "D2", "N1", "B1"])
+league_code = st.selectbox("Zvol ligu:", ["E0", "SP1", "D1", "I1", "F1","E1", "T1", "D2", "N1", "B1","P1"])
 
 df_raw = load_data_by_league(league_code)
 teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
@@ -106,6 +139,15 @@ if st.button("🔍 Spustit predikci"):
             (df_ext["AwayTeam"] == away_team) &
             (df_ext["Date"].dt.date == datetime.today().date())
         ]
+        
+        # === Načtení featur z trénování ===
+        with open(f"models/{league_code}_bayes_feature_groups.json", "r") as f:
+            feature_groups = json.load(f)
+            feature_cols = feature_groups["feature_cols"]
+            binary_cols = feature_groups["binary_cols"]
+            features = feature_cols + binary_cols  # 🧠 celkový seznam přesně 39 sloupců
+
+        
         print("Featury v match_row:", match_row.columns.tolist())
         missing = [col for col in features if col not in match_row.columns]
         print("❌ Chybějící featury:", missing)
@@ -174,17 +216,17 @@ if st.button("🔍 Spustit predikci"):
             st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
             st.markdown("---")
             
-            # === Bayesovský model ===
-            class BayesianMLP(pyro.nn.PyroModule):
-                def __init__(self, in_features, hidden_size=64,dropout_rate=0.2):
+            # === Definice Bayesovského modelu ===
+            class BayesianMLP(PyroModule):
+                def __init__(self, in_features, hidden_size=64, dropout_rate=0.2):
                     super().__init__()
-                    self.fc1 = pyro.nn.PyroModule[nn.Linear](in_features, hidden_size)
-                    self.fc1.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
-                    self.fc1.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
-                    self.dropout = nn.Dropout(p=dropout_rate) 
-                    self.out = pyro.nn.PyroModule[nn.Linear](hidden_size, 1)
-                    self.out.weight = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
-                    self.out.bias = pyro.nn.PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
+                    self.fc1 = PyroModule[nn.Linear](in_features, hidden_size)
+                    self.fc1.weight = PyroSample(dist.Normal(0., 1.).expand([hidden_size, in_features]).to_event(2))
+                    self.fc1.bias = PyroSample(dist.Normal(0., 1.).expand([hidden_size]).to_event(1))
+                    self.dropout = nn.Dropout(p=dropout_rate)
+                    self.out = PyroModule[nn.Linear](hidden_size, 1)
+                    self.out.weight = PyroSample(dist.Normal(0., 1.).expand([1, hidden_size]).to_event(2))
+                    self.out.bias = PyroSample(dist.Normal(0., 1.).expand([1]).to_event(1))
                     self.sigmoid = nn.Sigmoid()
 
                 def forward(self, x, y=None):
@@ -193,49 +235,51 @@ if st.button("🔍 Spustit predikci"):
                     logits = self.out(x).squeeze(-1)
                     probs = self.sigmoid(logits)
                     with pyro.plate("data", x.shape[0]):
-                        obs = pyro.sample("obs", dist.Bernoulli(probs), obs=y)
+                        pyro.sample("obs", dist.Bernoulli(probs), obs=y)
                     return probs
+            # === Načtení feature definice ===
+            with open(f"models/{league_code}_bayes_feature_groups.json", "r") as f:
+                feature_groups = json.load(f)
+                feature_cols = feature_groups["feature_cols"]
+                binary_cols = feature_groups["binary_cols"]
+                expected_features = feature_cols + binary_cols
 
-            # === Načtení seznamu očekávaných featur ===
-            with open(f"models/{league_code}_bayes_features.json") as f:
-                expected_features = json.load(f)
+            # === Doplnění chybějících sloupců ===
+            for col in expected_features:
+                if col not in match_row.columns:
+                    match_row[col] = 0
 
-            # === Porovnání se vstupem ===
-            missing = [col for col in expected_features if col not in X_input.columns]
-            extra = [col for col in X_input.columns if col not in expected_features]
-
-            if missing:
-                st.warning(f"⚠️ Chybějící featury v predikčních datech: {missing}")
-                for col in missing:
-                    X_input[col] = np.nan  # doplníme NaNy
-
-            if extra:
-                st.warning(f"⚠️ Extra featury, které nebyly při trénování: {extra}")
-
-            # === Zarovnání pořadí sloupců ===
-            X_input = X_input[expected_features]
+            # === Sjednocení a řazení sloupců ===
+            X_inputB = match_row[expected_features].copy().fillna(0)
             
-            
-            # === Načtení scaleru a vstupu ===
+            # === Urovnání pořadí ===
+            X_inputB = X_inputB[expected_features]
+
+            # === Načtení scaleru a škálování ===
             scaler = joblib.load(f"models/{league_code}_bayes_scaler.joblib")
-            X_scaled = scaler.transform(X_input)
-            x_tensor = torch.tensor(X_scaled, dtype=torch.float)
+            X_scaled_part = scaler.transform(X_inputB[feature_cols].values)
+            X_scaled = np.concatenate([X_scaled_part, X_inputB[binary_cols].values], axis=1)
 
-            # === Inicializace modelu a načtení guide ===
-            model = BayesianMLP(x_tensor.shape[1], hidden_size=64, dropout_rate=0.2)
+            # === Převod na tensor ===
+            x_tensor = torch.tensor(X_scaled, dtype=torch.float32).reshape(1, -1)
+
+            # === Inicializace modelu ===
+            model = BayesianMLP(in_features=x_tensor.shape[1], hidden_size=64, dropout_rate=0.2)
+
+            # === Načtení guide ===
             with open(f"models/{league_code}_bayes_guide.pkl", "rb") as f:
                 guide = dill.load(f)
-            print("❓ X_input shape:", X_input.shape)
-            print("🧠 Počet featur použitých při tréninku:", model.fc1.weight.shape[1])
 
-            # === Predikce pomocí posterior predictive sampling ===
-            predictive = Predictive(model, guide=guide, num_samples=3000, return_sites=["obs"])
+            # === Predikce ===
+            predictive = Predictive(model, guide=guide, num_samples=2000, return_sites=["obs"])
             samples = predictive(x_tensor)
-            # Výsledek: [num_samples, batch_size]
             y_pred_samples = samples["obs"].float().numpy()
-            mean_prob = y_pred_samples.mean(axis=0)
-            lower_ci = np.percentile(y_pred_samples, 10, axis=0)
-            upper_ci = np.percentile(y_pred_samples, 90, axis=0)
+
+            mean_prob = y_pred_samples.mean()
+            lower_ci = np.percentile(y_pred_samples, 10)
+            upper_ci = np.percentile(y_pred_samples, 90)
+            
+
             # === Funkce pro interpretaci výsledku ===
             def classify_with_uncertainty(mean, lower, upper, threshold=0.5, tolerance=0.15):
                 if upper < threshold - tolerance:
@@ -255,19 +299,22 @@ if st.button("🔍 Spustit predikci"):
             st.markdown(f"**Pravděpodobnost Over 2.5**: {mean_prob * 100:.2f}%")
             st.markdown(f"**Interval spolehlivosti (10–90 %)**: {lower_ci * 100:.1f}% – {upper_ci * 100:.1f}%")
             st.markdown(f"🧠 **Klasifikace**: {classify_with_uncertainty(mean_prob, lower_ci, upper_ci)}")
-            st.write(X_input)
+            st.write(X_inputB)
 
             plt.hist(y_pred_samples.flatten(), bins=50)
             plt.title("Distribuce predikovaných pravděpodobností")
             plt.show()
             # === Analýza na validační sadě ===
-            X_val_scaled = scaler.transform(X_val)
+            X_val_scaled = scaler.transform(X_inputB[feature_cols].values)
             x_val_tensor = torch.tensor(X_val_scaled, dtype=torch.float)
             samples_val = predictive(x_val_tensor)
             y_val_pred_samples = samples_val["obs"].float().numpy()
             bayes_probs = y_val_pred_samples.mean(axis=0)
             ci_widths = np.percentile(y_val_pred_samples, 90, axis=0) - np.percentile(y_val_pred_samples, 10, axis=0)
             bayes_preds = (bayes_probs > 0.5).astype(int)
+            # === 📊 Nový scatter plot – vztah mezi jistotou a přesností ===
+            plot_confidence_vs_accuracy(y_val_pred_samples, y_val.values)
+
 
             # === Vyhodnocení ===
             st.subheader("🧪 Evaluace Bayesovského modelu")

@@ -1,310 +1,196 @@
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from collections import defaultdict
+from pathlib import Path
 
-# === Pomocné funkce ===
+def calculate_elo(df, k=30, base_rating=1500):
+    elo_dict = {}
+    elo_home_list = []
+    elo_away_list = []
 
-def calculate_elo_rating(df):
-    elo_ratings = defaultdict(lambda: 1500)
-    k = 20
-    ratings = []
-   
+    df = df.sort_values("Date").copy()
+
     for _, row in df.iterrows():
-        home = row['HomeTeam']
-        away = row['AwayTeam']
+        home = row["HomeTeam"]
+        away = row["AwayTeam"]
+        home_goals = row["FTHG"]
+        away_goals = row["FTAG"]
 
-        home_elo = elo_ratings[home]
-        away_elo = elo_ratings[away]
+        elo_home = elo_dict.get(home, base_rating)
+        elo_away = elo_dict.get(away, base_rating)
 
-        expected_home = 1 / (1 + 10 ** ((away_elo - home_elo) / 400))
-        expected_away = 1 - expected_home
-
-        if row['FTHG'] > row['FTAG']:
-            score_home, score_away = 1, 0
-        elif row['FTHG'] < row['FTAG']:
-            score_home, score_away = 0, 1
+        if home_goals > away_goals:
+            result = 1
+        elif home_goals == away_goals:
+            result = 0.5
         else:
-            score_home, score_away = 0.5, 0.5
+            result = 0
 
-        elo_ratings[home] += k * (score_home - expected_home)
-        elo_ratings[away] += k * (score_away - expected_away)
+        expected_home = 1 / (1 + 10 ** ((elo_away - elo_home) / 400))
+        change = k * (result - expected_home)
 
-        ratings.append((home_elo, away_elo))
+        elo_dict[home] = elo_home + change
+        elo_dict[away] = elo_away - change
 
-    return ratings
+        elo_home_list.append(elo_home)
+        elo_away_list.append(elo_away)
 
-# === Hlavní funkce ===
-
-def generate_extended_features(df, mode="train"):
-    df = df.copy()
-
-    df["HomeTeam"] = df["HomeTeam"].str.strip()
-    df["AwayTeam"] = df["AwayTeam"].str.strip()
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
-    invalid_dates = df[~df['Date'].astype(str).str.match(r'\d{4}-\d{2}-\d{2}')]
-
-
-    # A pak vyhoď jen řádky s NaT až úplně na konci
-    df = df.dropna(subset=["Date"])    
-    df = df.sort_values(by='Date', ascending=True, na_position='last')
-   
-    
-    
-    #if mode == "train":
-    #    df = df[df['FTHG'].notnull() & df['FTAG'].notnull()]
-    #else:
-    #    df['FTHG'] = np.nan
-     #   df['FTAG'] = np.nan
-
-    # Výpočet Elo
-    elo = calculate_elo_rating(df)
-    df['elo_rating_home'], df['elo_rating_away'] = zip(*elo)
-    df["elo_rating_home"] = df["elo_rating_home"] - 1500
-    df["elo_rating_away"] = df["elo_rating_away"] - 1500
-
-    if mode == "train":
-        df['Over_2.5'] = (df['FTHG'] + df['FTAG']) > 2.5
-        
-     # Výpočet odds features
-    if 'Avg>2.5' in df.columns and 'Avg<2.5' in df.columns:
-        df["prob_over25"] = 1 / df["Avg>2.5"]
-        df["prob_under25"] = 1 / df["Avg<2.5"]
-        df["over25_expectation_gap"] = df["prob_over25"] - df["prob_under25"]
-        df["missing_odds_info"] = df[["prob_over25", "prob_under25"]].isna().any(axis=1).astype(int)
-    else:
-        df["prob_over25"] = np.nan
-        df["prob_under25"] = np.nan
-        df["over25_expectation_gap"] = np.nan
-        df["missing_odds_info"] = 1
-
-    for team_type in ['HomeTeam', 'AwayTeam']:
-        side = 'home' if team_type == 'HomeTeam' else 'away'
-        df[f'{side}_shots'] = df.apply(lambda row: row['HS'] if side == 'home' else row['AS'], axis=1)
-        df[f'{side}_shots_on_target'] = df.apply(lambda row: row['HST'] if side == 'home' else row['AST'], axis=1)
-        df[f'{side}_corners'] = df.apply(lambda row: row['HC'] if side == 'home' else row['AC'], axis=1)
-        df[f'{side}_fouls'] = df.apply(lambda row: row['HF'] if side == 'home' else row['AF'], axis=1)
-        df[f'{side}_cards'] = df.apply(lambda row: row['HY'] + row['HR'] if side == 'home' else row['AY'] + row['AR'], axis=1)
-
-    
-    for metric in ['shots', 'shots_on_target', 'corners', 'fouls', 'cards']:
-        for side, team_type in [('home', 'HomeTeam'), ('away', 'AwayTeam')]:
-            col_name = f'{metric}_{side}_last5'
-            base_col = f'{side}_{metric}'
-
-            df[col_name] = (
-                df.groupby(team_type)[base_col]
-                .transform(lambda x: x.shift().rolling(window=6, min_periods=1).mean())
-            )
-
-            # Missing flag
-            df[f'{col_name}_missing'] = df[col_name].isna().astype(int)
-            df[col_name] = df[col_name].fillna(0)
-
-    
-    # Missing flags
-    df['missing_shot_diff_last5m'] = df[['shots_home_last5', 'shots_away_last5']].isna().any(axis=1).astype(int)
-    df['missing_shot_on_target_diff_last5'] = df[['shots_on_target_home_last5', 'shots_on_target_away_last5']].isna().any(axis=1).astype(int)
-    df['missing_corner_diff_last5'] = df[['corners_home_last5', 'corners_away_last5']].isna().any(axis=1).astype(int)
-    df['missing_fouls_diff'] = df[['fouls_home_last5', 'fouls_away_last5']].isna().any(axis=1).astype(int)
-    df['missing_card_diff'] = df[['cards_home_last5', 'cards_away_last5']].isna().any(axis=1).astype(int)
-
-    # Odvozené rozdílové metriky
-    df['shot_diff_last5m'] = df['shots_home_last5'] - df['shots_away_last5']
-    df['shot_on_target_diff_last5'] = df['shots_on_target_home_last5'] - df['shots_on_target_away_last5']
-    df['corner_diff_last5'] = df['corners_home_last5'] - df['corners_away_last5']
-    df['fouls_diff'] = df['fouls_home_last5'] - df['fouls_away_last5']
-    df['card_diff'] = df['cards_home_last5'] - df['cards_away_last5']
-
-        
-    # Forma týmů doma/venku (střely a xG za poslední 3 zápasy)
-    df["home_form_shots"] = (
-        df.groupby("HomeTeam")["HS"]
-        .transform(lambda x: x.shift().rolling(window=5, min_periods=1).mean())
-    )
-    df["home_form_xg"] = (
-        df.groupby("HomeTeam")
-        .apply(lambda g: (g["HS"] * 0.09 + g["HST"] * 0.2).shift().rolling(window=5, min_periods=1).mean())
-        .reset_index(level=0, drop=True)
-    )
-    df["missing_home_form_shots"] = df["home_form_shots"].isna().astype(int)
-    df["missing_home_form_xg"] = df["home_form_xg"].isna().astype(int)
-    df["home_form_shots"] = df["home_form_shots"].fillna(0)
-    df["home_form_xg"] = df["home_form_xg"].fillna(0)
-
-    df["away_form_shots"] = (
-        df.groupby("AwayTeam")["AS"]
-        .transform(lambda x: x.shift().rolling(window=5, min_periods=1).mean())
-    )
-    df["away_form_xg"] = (
-        df.groupby("AwayTeam")
-        .apply(lambda g: (g["AS"] * 0.09 + g["AST"] * 0.2).shift().rolling(window=5, min_periods=1).mean())
-        .reset_index(level=0, drop=True)
-    )
-    df["missing_away_form_shots"] = df["away_form_shots"].isna().astype(int)
-    df["missing_away_form_xg"] = df["away_form_xg"].isna().astype(int)
-    df["away_form_shots"] = df["away_form_shots"].fillna(0)
-    df["away_form_xg"] = df["away_form_xg"].fillna(0)
-
-    if 'Avg<2.5' in df.columns:
-        df["log_odds_under25"] = np.log(df["Avg<2.5"] + 1)
-    else:
-        df["log_odds_under25"] = np.nan
-    df["missing_log_odds_under25"] = df["log_odds_under25"].isna().astype(int)
-    df["log_odds_under25"] = df["log_odds_under25"].fillna(0)
-        
-    
-    # 🛠️ Fallback pro chybějící sloupce a NaN hodnoty
-    needed_last5_cols = [
-        'shots_home_last5', 'shots_away_last5',
-        'shots_on_target_home_last5', 'shots_on_target_away_last5',
-        'corners_home_last5', 'corners_away_last5',
-        'fouls_home_last5', 'fouls_away_last5',
-        'cards_home_last5', 'cards_away_last5',
-    ]
-    
-    for col in needed_last5_cols:
-        if col not in df.columns:
-            df[col] = np.nan
-        df[col] = df[col].fillna(0)
-
-        
-    
-        
-        
-
-
-        
-
-
-    
-
-    df['home_xg'] = df['HS'] * 0.09 + df['HST'] * 0.2
-    df['away_xg'] = df['AS'] * 0.09 + df['AST'] * 0.2
-    df = df.sort_values(by=['HomeTeam', 'Date'], ascending=[True, True], na_position='last')
-
-    df['xg_home_last5'] = (
-        df.groupby('HomeTeam')
-        .apply(lambda g: g.sort_values('Date')
-                            .assign(xg_home_last5 = g['home_xg'].shift().rolling(window=6, min_periods=1).mean()))
-        .reset_index(drop=True)['xg_home_last5']
-    )
-    df = df.sort_values(by=['AwayTeam', 'Date'], ascending=[True, True], na_position='last')
-
-    df['xg_away_last5'] = (
-        df.groupby('AwayTeam')
-        .apply(lambda g: g.sort_values('Date')
-                            .assign(xg_away_last5 = g['away_xg'].shift().rolling(window=6, min_periods=1).mean()))
-        .reset_index(drop=True)['xg_away_last5']
-    )
-
-
-    df['missing_xg_home_last5'] = df['xg_home_last5'].isna().astype(int)
-    df['missing_xg_away_last5'] = df['xg_away_last5'].isna().astype(int)
-
-    if mode == "predict":
-        df.loc[(df['home_xg'].isna()) | (df['home_xg'] == 0), 'home_xg'] = df['xg_home_last5']
-        df.loc[(df['away_xg'].isna()) | (df['away_xg'] == 0), 'away_xg'] = df['xg_away_last5']
-
-
-    if mode == "train":
-        df['boring_match_score'] = (
-            (df['HS'].fillna(0) + df['AS'].fillna(0)) * 0.05 +
-            (df['HST'].fillna(0) + df['AST'].fillna(0)) * 0.1
-        )
-    else:
-        df['boring_match_score'] = (
-            (df['shots_home_last5'].fillna(0) + df['shots_away_last5'].fillna(0)) * 0.05 +
-            (df['shots_on_target_home_last5'].fillna(0) + df['shots_on_target_away_last5'].fillna(0)) * 0.1
-        )
-
-
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=True)
-        df['match_weight'] = df['Date'].apply(
-            lambda date: 1 / (np.log((datetime.now() - date).days + 2)) if pd.notnull(date) else 1.0
-        )
-    else:
-        df['match_weight'] = 1.0
-
-    
-
-
-
-    # Momentum score (vždy se vytvoří, fallback přes fillna)
-    df["momentum_score"] = (
-        (df["elo_rating_home"].fillna(0) - df["elo_rating_away"].fillna(0)) +
-        (df["xg_home_last5"].fillna(0) - df["xg_away_last5"].fillna(0))
-    )
-    df["momentum_score"] = (
-        np.sign(df["momentum_score"].clip(-200, 200)) *
-        np.log1p(np.abs(df["momentum_score"].clip(-200, 200)))
-    )
-
-
-
-    
-    # Pokročilé metriky – záleží na režimu
-    if mode == "train":
-        df["shooting_efficiency"] = (df["HST"] + df["AST"]) / (df["HS"] + df["AS"] + 1)
-        df["tempo_score"] = df["HS"] + df["AS"] + df["HC"] + df["AC"]
-        df["passivity_score"] = (
-            (df["HS"] + df["AS"]) * 0.05 +
-            (df["HC"] + df["AC"]) * 0.1 +
-            (df["home_xg"] + df["away_xg"]) * 0.15
-        )
-    else:
-        df["shooting_efficiency"] = (df["shots_on_target_home_last5"] + df["shots_on_target_away_last5"]) / (df["shots_home_last5"] + df["shots_away_last5"] + 1)
-        df["tempo_score"] = df["shots_home_last5"] + df["shots_away_last5"] + df["corners_home_last5"] + df["corners_away_last5"]
-        df["passivity_score"] = (
-            (df["shots_home_last5"] + df["shots_away_last5"]) * 0.05 +
-            (df["corners_home_last5"] + df["corners_away_last5"]) * 0.1 +
-            (df["xg_home_last5"] + df["xg_away_last5"]) * 0.15
-        )
-        
-    # Kombinace agresivity a pasivity obou týmů
-    df["aggressiveness_score"] = (df["fouls_diff"].abs() + df["card_diff"].abs()).clip(0, 10)
-    df["behavior_balance"] = df["passivity_score"].fillna(0) + df["aggressiveness_score"].fillna(0)
-    
-    
-
-    for team_type in ['HomeTeam', 'AwayTeam']:
-        side = 'home' if team_type == 'HomeTeam' else 'away'
-        conceded_col = f'{side}_conceded'
-
-        # Gól inkasovaný v zápase (jen pro train a predikci, kde je historie)
-        df[conceded_col] = df.apply(
-            lambda row: row['FTAG'] if side == 'home' else row['FTHG'], axis=1
-        )
-
-        conceded_last5 = f'conceded_{side}_last5'
-        df[conceded_last5] = (
-            df.groupby(team_type)[conceded_col]
-              .transform(lambda x: x.shift().rolling(window=5, min_periods=1).mean())
-        )
-
-        # Missing flag
-        df[f'missing_{conceded_last5}'] = df[conceded_last5].isna().astype(int)
-        df[conceded_last5] = df[conceded_last5].fillna(0)
-     
-    df["defensive_stability"] = (df["conceded_home_last5"] + df["conceded_away_last5"]) / 2   
-        
-    df["xg_conceded_home_last5"] = df["shots_away_last5"] * 0.09 + df["shots_on_target_away_last5"] * 0.2
-    df["xg_conceded_away_last5"] = df["shots_home_last5"] * 0.09 + df["shots_on_target_home_last5"] * 0.2
-    df["avg_xg_conceded"] = (df["xg_conceded_home_last5"] + df["xg_conceded_away_last5"]) / 2
-    df["xg_ratio"] = (df["xg_home_last5"] + df["xg_away_last5"]) / (df["avg_xg_conceded"] + 0.1)
-    df["xg_ratio"] = np.log1p(df["xg_ratio"].clip(0, 10))
-    df["defensive_pressure"] = df["fouls_diff"] + df["card_diff"]
-    
-    df["missing_xg_conceded_home_last5"] = df["xg_conceded_home_last5"].isna().astype(int)
-    df["missing_xg_conceded_away_last5"] = df["xg_conceded_away_last5"].isna().astype(int)
-    df["missing_avg_xg_conceded"] = df["avg_xg_conceded"].isna().astype(int)
-    df["missing_xg_ratio"] = df["xg_ratio"].isna().astype(int)
-    df["missing_defensive_pressure"] = df["defensive_pressure"].isna().astype(int)
-
-    
-        
-
-    
-    df.to_csv("debug_features.csv", index=False)
+    df["elo_home"] = elo_home_list
+    df["elo_away"] = elo_away_list
+    df["elo_diff"] = df["elo_home"] - df["elo_away"]
     return df
+
+def generate_features(df, mode="train"):
+    df = df.copy()
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
+    df = df.sort_values("Date").reset_index(drop=True)
+
+    # Vytvoření cílového sloupce bez data leakage
+    df["FTG"] = df["FTHG"] + df["FTAG"]
+    df["target_over25"] = (df["FTG"] > 2.5).astype(int)
+
+    df = calculate_elo(df)
+
+    # Target encoding bez leakage
+    df["home_team_target_enc"] = df.groupby("HomeTeam")["target_over25"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
+    df["away_team_target_enc"] = df.groupby("AwayTeam")["target_over25"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
+    df["home_team_avg_goals_enc"] = df.groupby("HomeTeam")["FTHG"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
+    df["away_team_avg_goals_enc"] = df.groupby("AwayTeam")["FTAG"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
+
+    stats = {
+        "HomeTeam": {
+            "goals": "FTHG", "conceded": "FTAG",
+            "shots": "HS", "shots_on_target": "HST",
+            "corners": "HC", "fouls": "HF",
+            "yellow": "HY", "red": "HR"
+        },
+        "AwayTeam": {
+            "goals": "FTAG", "conceded": "FTHG",
+            "shots": "AS", "shots_on_target": "AST",
+            "corners": "AC", "fouls": "AF",
+            "yellow": "AY", "red": "AR"
+        }
+    }
+
+    missing_features = []
+
+    for team_type, mapping in stats.items():
+        prefix = "home" if team_type == "HomeTeam" else "away"
+        for stat_key, col in mapping.items():
+            try:
+                rolled = (
+                    df.groupby(team_type)[col]
+                    .apply(lambda x: x.shift(1).rolling(5, min_periods=1).agg(['mean', 'median', 'var']))
+                    .reset_index(level=0, drop=True)
+                )
+                df[f"{stat_key}_{prefix}_last5_mean"] = rolled['mean']
+                df[f"{stat_key}_{prefix}_last5_median"] = rolled['median']
+                df[f"{stat_key}_{prefix}_last5_var"] = rolled['var']
+            except Exception as e:
+                missing_features.extend([
+                    f"{stat_key}_{prefix}_last5_mean",
+                    f"{stat_key}_{prefix}_last5_median",
+                    f"{stat_key}_{prefix}_last5_var"
+                ])
+                print(f"Warning: Could not calculate rolling stats for {col} ({prefix}): {e}")
+
+        # Odvozené metriky
+        df[f"shot_conversion_rate_{prefix}"] = df.get(f"goals_{prefix}_last5_mean", 0) / (df.get(f"shots_{prefix}_last5_mean", 0) + 0.01)
+        df[f"attacking_pressure_{prefix}"] = df.get(f"shots_on_target_{prefix}_last5_mean", 0) / (df.get(f"shots_{prefix}_last5_mean", 0) + 0.01)
+        df[f"disciplinary_index_{prefix}"] = (df.get(f"yellow_{prefix}_last5_mean", 0) + 2 * df.get(f"red_{prefix}_last5_mean", 0)) / (df.get(f"fouls_{prefix}_last5_mean", 0) + 0.01)
+        df[f"goal_per_shot_on_target_{prefix}"] = df.get(f"goals_{prefix}_last5_mean", 0) / (df.get(f"shots_on_target_{prefix}_last5_mean", 0) + 0.01)
+
+    # Tempo score jako indikátor útočného tempa
+    df["tempo_score"] = (
+        df.get("shots_home_last5_mean", 0) + df.get("shots_away_last5_mean", 0) +
+        df.get("shots_on_target_home_last5_mean", 0) + df.get("shots_on_target_away_last5_mean", 0) +
+        df.get("corners_home_last5_mean", 0) + df.get("corners_away_last5_mean", 0)
+    )
+
+    # Rozdílové metriky
+    df["conversion_rate_diff"] = df["shot_conversion_rate_home"] - df["shot_conversion_rate_away"]
+    df["attacking_pressure_diff"] = df["attacking_pressure_home"] - df["attacking_pressure_away"]
+    df["goal_per_shot_on_target_diff"] = df["goal_per_shot_on_target_home"] - df["goal_per_shot_on_target_away"]
+    df["disciplinary_index_diff"] = df["disciplinary_index_home"] - df["disciplinary_index_away"]
+
+        # === Váhování zápasů podle stáří ===
+    if mode == "train":
+        df["match_weight"] = np.exp(-(df.index.max() - df.index) / df.shape[0])
+    else:
+        df["match_weight"] = 1.0
+    
+        # === Home advantage weight ===
+    df["home_advantage_weight"] = df["elo_home"] - df["elo_away"]   
+        # === Sample uncertainty weight ===
+    df["sample_uncertainty_weight"] = 1 / (1 + df["elo_diff"].abs() / 400)
+    # Vysoký rozptyl znamená nespolehlivost týmového výkonu → nižší váha
+    df["recent_goal_variance_weight"] = 1 / (
+        1 + df["goals_home_last5_var"].fillna(0) + df["goals_away_last5_var"].fillna(0)
+    )
+    
+    df["style_chaos_index"] = (
+    df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"] +
+    df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"]
+    )
+    df["style_chaos_diff"] = (
+    (df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"]) -
+    (df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"])
+    )
+
+
+    
+        # === Výkon proti různě silným soupeřům ===
+    def categorize_opponent_strength(elo, thresholds):
+        if elo < thresholds[0]:
+            return 'weak'
+        elif elo < thresholds[1]:
+            return 'average'
+        else:
+            return 'strong'
+    
+    elo_thresholds = df[["elo_home", "elo_away"]].quantile([0.33, 0.66]).values.T
+
+    for side in ["HomeTeam", "AwayTeam"]:
+        team_col = "HomeTeam" if side == "HomeTeam" else "AwayTeam"
+        opponent_elo_col = "elo_away" if side == "HomeTeam" else "elo_home"
+        goals_col = "FTHG" if side == "HomeTeam" else "FTAG"
+
+        df[f"opponent_strength_{side.lower()}"] = df[opponent_elo_col].apply(lambda x: categorize_opponent_strength(x, elo_thresholds[0]))
+
+        for strength in ["weak", "average", "strong"]:
+            mask = df[f"opponent_strength_{side.lower()}"] == strength
+            df[f"goals_vs_{strength}_{side.lower()}"] = (
+                df.groupby(team_col)[goals_col]
+                .transform(lambda x: x.shift(1).where(mask).rolling(10, min_periods=1).mean())
+            )
+    
+    
+    
+    final_features = [
+        "home_team_target_enc", "away_team_target_enc",
+        "home_team_avg_goals_enc", "away_team_avg_goals_enc",
+        "elo_diff",#,"elo_home", "elo_away"
+    ]
+
+    agg_keys = [
+        "goals", "conceded", "shots", "shots_on_target", "corners",
+        "fouls", "yellow", "red"
+    ]
+    aggs = ["mean", "median", "var"]
+    sides = ["home", "away"]
+
+    feature_block_aggs = [f"{key}_{side}_last5_{agg}" for key in agg_keys for side in sides for agg in aggs]
+    feature_block_derived = [f"{metric}_{side}" for metric in ["shot_conversion_rate", "attacking_pressure", "goal_per_shot_on_target"] for side in sides]
+    feature_block_diffs = [
+        "tempo_score","conversion_rate_diff", "attacking_pressure_diff", "goal_per_shot_on_target_diff",
+        "sample_uncertainty_weight","home_advantage_weight","recent_goal_variance_weight","style_chaos_diff","disciplinary_index_diff"
+        
+        
+        ]
+
+    #final_features += feature_block_aggs + feature_block_derived + ["tempo_score"] + feature_block_diffs
+    final_features += feature_block_diffs
+    # === Uložení features_list.py ===
+    features_list_code = "feature_cols = [\n" + ",\n".join([f'    \"{f}\"' for f in final_features]) + "\n]"
+    Path("features_list.py").write_text(features_list_code)
+
+    return df[final_features + ["HomeTeam", "AwayTeam", "Date", "target_over25", "match_weight"]]
