@@ -192,7 +192,7 @@ def generate_features(df, mode="train"):
     final_features = [
         "home_team_target_enc", "away_team_target_enc",
         "home_team_avg_goals_enc", "away_team_avg_goals_enc",
-        "elo_diff","league_over25_ratio"#"league_avg_goals"#,"elo_home", "elo_away"
+        "elo_diff"#,"league_over25_ratio"#"league_avg_goals"#,"elo_home", "elo_away"
     ]
 
     agg_keys = [

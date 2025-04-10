@@ -4,7 +4,6 @@ feature_cols = [
     "home_team_avg_goals_enc",
     "away_team_avg_goals_enc",
     "elo_diff",
-    "league_over25_ratio",
     "tempo_score",
     "conversion_rate_diff",
     "attacking_pressure_diff",
