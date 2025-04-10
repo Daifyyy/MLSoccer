@@ -39,7 +39,7 @@ def get_model_importance(model, feature_cols):
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
-league_code = st.selectbox("Zvol ligu:", ["E0","E1", "SP1", "D1","D2", "I1", "F1","B1","P1","T1"])
+league_code = st.selectbox("Zvol ligu:", ["E0","E1", "SP1", "D1","D2", "I1", "F1","B1","P1","T1","N1"])
 
 df_raw = load_data_by_league(league_code)
 teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))

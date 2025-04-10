@@ -56,6 +56,10 @@ def generate_features(df, mode="train"):
     df["home_team_avg_goals_enc"] = df.groupby("HomeTeam")["FTHG"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
     df["away_team_avg_goals_enc"] = df.groupby("AwayTeam")["FTAG"].transform(lambda x: x.shift(1).ewm(span=5, adjust=False).mean())
 
+    # === Nové ligové metriky ===
+    df["league_avg_goals"] = (df["FTHG"] + df["FTAG"]).expanding().mean()
+    df["league_over25_ratio"] = ((df["FTHG"] + df["FTAG"]) > 2.5).expanding().mean()
+    
     stats = {
         "HomeTeam": {
             "goals": "FTHG", "conceded": "FTAG",
@@ -188,7 +192,7 @@ def generate_features(df, mode="train"):
     final_features = [
         "home_team_target_enc", "away_team_target_enc",
         "home_team_avg_goals_enc", "away_team_avg_goals_enc",
-        "elo_diff",#,"elo_home", "elo_away"
+        "elo_diff","league_over25_ratio"#"league_avg_goals"#,"elo_home", "elo_away"
     ]
 
     agg_keys = [

@@ -151,9 +151,10 @@ def train_and_save_models(league_code):
         eval_metric="auc",
         callbacks=[early_stopping(20), lgb.log_evaluation(0)],
     )
+    os.makedirs("models", exist_ok=True)
     joblib.dump(lgb_model, f"models/{league_code}_lgb_model.joblib")
     print(f"✅ Model uložen se {len(X_train.columns)} featurami.")
-    print(list(X_train.columns))
+    #print(list(X_train.columns))
     rf = RandomForestClassifier(max_depth=4, n_estimators=300, class_weight="balanced", random_state=42)
     rf.fit(X_train, y_train, sample_weight=w_train)
 
