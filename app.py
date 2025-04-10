@@ -120,15 +120,18 @@ if st.button("🔍 Spustit predikci"):
 
             st.subheader("📊 Predikce:")
             st.markdown(f"**Random Forest:** {rf_prob:.2%} ({1 / rf_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if rf_pred else '❌ NE'}")
-            st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
+            st.markdown(f"              {1 - rf_prob:.2%} ({1 / (1 - rf_prob):.2f}) pravděpodobnost Under 2.5")
+            #st.markdown(f"Confidence: {get_confidence(rf_prob)} (threshold: {rf_thresh:.2f})")
             st.markdown("---")
 
             st.markdown(f"**XGBoost:** {xgb_prob:.2%} ({1 / xgb_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if xgb_pred else '❌ NE'}")
-            st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
+            st.markdown(f"              {1 - xgb_prob:.2%} ({1 / (1 - xgb_prob):.2f}) pravděpodobnost Under 2.5")
+            #st.markdown(f"Confidence: {get_confidence(xgb_prob)} (threshold: {xgb_thresh:.2f})")
             st.markdown("---")
 
             st.markdown(f"**LightGBM:** {lgb_prob:.2%} ({1 / lgb_prob:.2f}) pravděpodobnost Over 2.5 → {'✅ ANO' if lgb_pred else '❌ NE'}")
-            st.markdown(f"Confidence: {get_confidence(lgb_prob)} (threshold: {lgb_thresh:.2f})")
+            st.markdown(f"              {1 - lgb_prob:.2%} ({1 / (1 - lgb_prob):.2f}) pravděpodobnost Under 2.5")
+            #st.markdown(f"Confidence: {get_confidence(lgb_prob)} (threshold: {lgb_thresh:.2f})")
             st.markdown("---")
 
             # st.subheader(f"🧠 SHAP vysvětlení predikce ({shap_pred_model})")
