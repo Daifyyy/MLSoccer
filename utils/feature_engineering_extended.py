@@ -217,4 +217,14 @@ def generate_features(df, mode="train"):
     features_list_code = "feature_cols = [\n" + ",\n".join([f'    \"{f}\"' for f in final_features]) + "\n]"
     Path("features_list.py").write_text(features_list_code)
 
+    
+    
+    # === Fallback pro chybějící rolling hodnoty v predikci ===
+    if mode == "predict":
+        rolling_cols = [col for col in df.columns if "_last5_" in col or col.endswith("_last5_mean")]
+        for col in rolling_cols:
+            col_mean = df[col].mean()
+            df[col] = df[col].fillna(col_mean if not np.isnan(col_mean) else 0)
+
+
     return df[final_features + ["HomeTeam", "AwayTeam", "Date", "target_over25", "match_weight"]]
