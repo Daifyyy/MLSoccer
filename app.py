@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from utils.feature_engineering_extended import generate_features
 from utils.data_loader import load_data_by_league, filter_team_matches, filter_h2h_matches
-
+from utils.feature_engineering_match_result import generate_match_result_features
 
 @st.cache_data(show_spinner=False)
 def load_model(path):
@@ -214,6 +214,28 @@ if st.button("🔍 Spustit predikci"):
                         unsafe_allow_html=True
                     )
                     row[4].markdown(f"<div style='text-align:left'>{a_val:.1f}</div>", unsafe_allow_html=True)
+                    
+            # === VÝSLEDEK ZÁPASU ===
+        df_result = generate_match_result_features(df_pred_input, mode="predict")
+        result_row = df_result[
+            (df_result["HomeTeam"] == home_team) &
+            (df_result["AwayTeam"] == away_team) &
+            (df_result["Date"].dt.date == datetime.today().date())
+        ]
+
+        if result_row.empty:
+            st.warning("⚠️ Výsledek zápasu: Nenalezeny vstupní featury pro predikci.")
+        else:
+            result_input = result_row.drop(columns=["HomeTeam", "AwayTeam", "Date", "target_result"], errors="ignore").fillna(0)
+            result_model_path = f"models/{league_code}_result_model.joblib"
+            result_model = joblib.load(result_model_path)
+
+            result_probs = result_model.predict_proba(result_input)[0]
+            result_labels = ["🏠 Výhra domácích", "🤝 Remíza", "🛫 Výhra hostů"]
+
+            st.subheader("📈 Predikce výsledku zápasu (1X2):")
+            for i, label in enumerate(result_labels):
+                st.markdown(f"**{label}:** {result_probs[i]:.2%} ({1 / result_probs[i]:.2f} odds)")
 
 
 

@@ -24,54 +24,39 @@ def generate_team_stats_features(df, mode="train"):
         df["target_reds_home"] = df["HR"]
         df["target_reds_away"] = df["AR"]
 
-    stats = {
-        "HomeTeam": {
-            "goals": "FTHG", "conceded": "FTAG",
-            "shots": "HS", "shots_on": "HST",
-            "corners": "HC", "fouls": "HF",
-            "yellow": "HY", "red": "HR"
-        },
-        "AwayTeam": {
-            "goals": "FTAG", "conceded": "FTHG",
-            "shots": "AS", "shots_on": "AST",
-            "corners": "AC", "fouls": "AF",
-            "yellow": "AY", "red": "AR"
-        }
-    }
+    # === Průměry pro posledních 5 zápasů pro střely, fauly a rohy ===
+    df["shots_home_last5_mean"] = df.groupby("HomeTeam")["HS"].transform(lambda x: x.rolling(5).mean())
+    df["fouls_home_last5_mean"] = df.groupby("HomeTeam")["HF"].transform(lambda x: x.rolling(5).mean())
+    df["corners_home_last5_mean"] = df.groupby("HomeTeam")["HC"].transform(lambda x: x.rolling(5).mean())
 
-    for team_type, mapping in stats.items():
-        prefix = "home" if team_type == "HomeTeam" else "away"
-        for stat_key, col in mapping.items():
-            rolled = (
-                df.groupby(team_type)[col]
-                .apply(lambda x: x.shift(1).rolling(5, min_periods=1).mean())
-                .reset_index(level=0, drop=True)
-            )
-            df[f"{stat_key}_{prefix}_last5"] = rolled
+    df["shots_away_last5_mean"] = df.groupby("AwayTeam")["AS"].transform(lambda x: x.rolling(5).mean())
+    df["fouls_away_last5_mean"] = df.groupby("AwayTeam")["AF"].transform(lambda x: x.rolling(5).mean())
+    df["corners_away_last5_mean"] = df.groupby("AwayTeam")["AC"].transform(lambda x: x.rolling(5).mean())
 
-    # Zjednodušené tempo a chaos metriky
-    df["tempo_score"] = df[[
-        "shots_home_last5", "shots_away_last5",
-        "shots_on_home_last5", "shots_on_away_last5",
-        "corners_home_last5", "corners_away_last5"
-    ]].sum(axis=1)
+    # === Taktické změny pro domácí a venkovní zápasy ===
+    df["shots_home_vs_away"] = df["shots_home_last5_mean"] / df["shots_away_last5_mean"]
+    df["fouls_home_vs_away"] = df["fouls_home_last5_mean"] / df["fouls_away_last5_mean"]
+    df["corners_home_vs_away"] = df["corners_home_last5_mean"] / df["corners_away_last5_mean"]
 
-    df["chaos_index"] = df[[
-        "fouls_home_last5", "fouls_away_last5",
-        "yellow_home_last5", "yellow_away_last5"
-    ]].sum(axis=1)
+    # === Dynamická data o soupeřích (historické statistiky soupeřů) ===
+    df["avg_shots_against_home"] = df.groupby("HomeTeam")["shots_away_last5_mean"].transform("mean")
+    df["avg_fouls_against_home"] = df.groupby("HomeTeam")["fouls_away_last5_mean"].transform("mean")
+    df["avg_corners_against_home"] = df.groupby("HomeTeam")["corners_away_last5_mean"].transform("mean")
 
-    # Rozdíl v očekávaných metrikách
-    df["shots_diff"] = df["shots_home_last5"] - df["shots_away_last5"]
-    df["corners_diff"] = df["corners_home_last5"] - df["corners_away_last5"]
-    df["fouls_diff"] = df["fouls_home_last5"] - df["fouls_away_last5"]
+    df["avg_shots_against_away"] = df.groupby("AwayTeam")["shots_home_last5_mean"].transform("mean")
+    df["avg_fouls_against_away"] = df.groupby("AwayTeam")["fouls_home_last5_mean"].transform("mean")
+    df["avg_corners_against_away"] = df.groupby("AwayTeam")["corners_home_last5_mean"].transform("mean")
 
+    # === Vytvoření features pro model ===
     features = [col for col in df.columns if (
         col.endswith("_last5") or
         col.endswith("_score") or
-        col.endswith("_diff")
+        col.endswith("_diff") or
+        "avg" in col or  # nově přidané pro soupeře
+        "home_vs_away" in col
     )]
 
     target_cols = [col for col in df.columns if col.startswith("target_")]
+    print(df.columns)
 
     return df[features + target_cols + ["HomeTeam", "AwayTeam", "Date"]]
