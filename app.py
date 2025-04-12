@@ -3,6 +3,7 @@ import streamlit as st
 from features_list import feature_cols
 import pandas as pd
 import numpy as np
+from scipy.special import softmax
 import joblib
 import json
 import os
@@ -47,6 +48,20 @@ st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 league_code = st.selectbox("Zvol ligu:", ["E0","E1", "SP1", "D1","D2", "I1", "F1","B1","P1","T1","N1"])
 
 df_raw = load_data_by_league(league_code)
+# Oprava chyb při načítání týmů (NaN hodnoty)
+df_raw["HomeTeam"] = df_raw["HomeTeam"].astype(str).str.strip()
+df_raw["AwayTeam"] = df_raw["AwayTeam"].astype(str).str.strip()
+
+# Odstranění chyb, kdy Home/AwayTeam je NaN nebo prázdný string
+df_raw = df_raw[(df_raw["HomeTeam"] != "nan") & (df_raw["AwayTeam"] != "nan")]
+df_raw = df_raw[(df_raw["HomeTeam"] != "") & (df_raw["AwayTeam"] != "")]
+
+# Debug výpis: podezřelé řádky
+invalid_rows = df_raw[df_raw["HomeTeam"].isna() | df_raw["AwayTeam"].isna()]
+if not invalid_rows.empty:
+    st.warning("⚠️ Chybné nebo prázdné názvy týmů byly detekovány a vynechány.")
+    st.dataframe(invalid_rows)
+
 teams = sorted(set(df_raw["HomeTeam"]).union(set(df_raw["AwayTeam"])))
 home_team = st.selectbox("Domácí tým:", teams)
 away_team = st.selectbox("Hostující tým:", teams)
@@ -229,8 +244,18 @@ if st.button("🔍 Spustit predikci"):
             result_input = result_row.drop(columns=["HomeTeam", "AwayTeam", "Date", "target_result"], errors="ignore").fillna(0)
             result_model_path = f"models/{league_code}_result_model.joblib"
             result_model = joblib.load(result_model_path)
+            # Načtení teploty pro danou ligu
+            temperature_path = f"models/{league_code}_temperature.json"
+            if os.path.exists(temperature_path):
+                with open(temperature_path, "r") as f:
+                    T = json.load(f)["temperature"]
+            else:
+                T = 1.0  # fallback hodnota
 
-            result_probs = result_model.predict_proba(result_input)[0]
+            # Kalibrace pomocí temperature scaling
+            raw_probs = result_model.predict_proba(result_input)[0]
+            logits = np.log(raw_probs + 1e-15)
+            result_probs = softmax(logits / T)
             result_labels = ["🏠 Výhra domácích", "🤝 Remíza", "🛫 Výhra hostů"]
 
             st.subheader("📈 Predikce výsledku zápasu (1X2):")

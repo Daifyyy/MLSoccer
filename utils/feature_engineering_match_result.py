@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 
@@ -84,6 +83,18 @@ def generate_match_result_features(df, mode="train"):
             df.at[idx, "h2h_home_win_ratio"] = (results == "H").mean()
             df.at[idx, "h2h_away_win_ratio"] = (results == "A").mean()
 
+    # Remízové metriky
+    df["draw_tendency_index"] = df.groupby("HomeTeam")["target_result"].transform(
+        lambda x: x.shift(1).rolling(10, min_periods=1).apply(lambda r: (r==1).mean())
+    )
+    df["draw_rate_home"] = df.groupby("HomeTeam")["target_result"].transform(
+        lambda x: x.shift(1).rolling(10, min_periods=1).apply(lambda r: (r==1).sum() / len(r) if len(r) > 0 else 0)
+    )
+    df["draw_rate_away"] = df.groupby("AwayTeam")["target_result"].transform(
+        lambda x: x.shift(1).rolling(10, min_periods=1).apply(lambda r: (r==1).sum() / len(r) if len(r) > 0 else 0)
+    )
+    df["elo_diff_close"] = df["elo_diff"].abs().apply(lambda x: 1 if x < 20 else 0)
+
     features = [
         "elo_home", "elo_away", "elo_diff",
         "goals_home_last5", "goals_away_last5",
@@ -95,7 +106,8 @@ def generate_match_result_features(df, mode="train"):
         "goal_diff_last5", "chaos_index",
         "disciplinary_index_home", "disciplinary_index_away",
         "form_home_last5_avg", "form_away_last5_avg",
-        "h2h_avg_goals", "h2h_draw_ratio", "h2h_home_win_ratio", "h2h_away_win_ratio"
+        "h2h_avg_goals", "h2h_draw_ratio", "h2h_home_win_ratio", "h2h_away_win_ratio",
+        "draw_tendency_index", "draw_rate_home", "draw_rate_away", "elo_diff_close"
     ]
 
     return df[features + ["HomeTeam", "AwayTeam", "Date", "target_result"]]
