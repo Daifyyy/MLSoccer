@@ -109,5 +109,93 @@ def generate_match_result_features(df, mode="train"):
         "h2h_avg_goals", "h2h_draw_ratio", "h2h_home_win_ratio", "h2h_away_win_ratio",
         "draw_tendency_index", "draw_rate_home", "draw_rate_away", "elo_diff_close"
     ]
+    
+    # Výpočet ELO strength
+    df["elo_all"] = df[["elo_home", "elo_away"]].mean(axis=1)
+    df["elo_weak_threshold"] = df["elo_all"].expanding().quantile(0.33)
+    df["elo_strong_threshold"] = df["elo_all"].expanding().quantile(0.66)
 
+    def categorize_strength(row, side):
+        opp_elo = row["elo_away"] if side == "HomeTeam" else row["elo_home"]
+        weak_th = row["elo_weak_threshold"]
+        strong_th = row["elo_strong_threshold"]
+        if pd.isna(opp_elo) or pd.isna(weak_th) or pd.isna(strong_th):
+            return np.nan
+        if opp_elo < weak_th:
+            return "weak"
+        elif opp_elo < strong_th:
+            return "average"
+        else:
+            return "strong"
+
+    df["opponent_strength_home"] = df.apply(lambda row: categorize_strength(row, "HomeTeam"), axis=1)
+    df["opponent_strength_away"] = df.apply(lambda row: categorize_strength(row, "AwayTeam"), axis=1)
+
+    metrics = {
+        "goals": {"HomeTeam": "FTHG", "AwayTeam": "FTAG"},
+        "shots": {"HomeTeam": "HS", "AwayTeam": "AS"},
+        "shots_on": {"HomeTeam": "HST", "AwayTeam": "AST"},
+    }
+
+    for side in ["HomeTeam", "AwayTeam"]:
+        team_col = side
+        side_label = "home" if side == "HomeTeam" else "away"
+        strength_col = f"opponent_strength_{side_label}"
+        for strength in ["weak", "average", "strong"]:
+            strength_mask_col = f"mask_{side}_{strength}"
+            df[strength_mask_col] = df[strength_col] == strength
+
+        for metric_key, column_map in metrics.items():
+            value_col = column_map[side]
+            for strength in ["weak", "average", "strong"]:
+                output_col = f"{metric_key}_vs_{strength}_{side_label}"
+                mask_col = f"mask_{side}_{strength}"
+                df[output_col] = np.nan
+                for team in df[team_col].unique():
+                    team_mask = df[team_col] == team
+                    team_df = df[team_mask].copy()
+                    team_df["val"] = team_df.apply(
+                        lambda row: row[value_col] if row[mask_col] else np.nan, axis=1
+                    )
+                    df.loc[team_mask, output_col] = (
+                        team_df["val"].shift(1).rolling(window=10, min_periods=1).mean().values
+                    )
+
+    for side in ["home", "away"]:
+        for strength in ["weak", "average", "strong"]:
+            goals_col = f"goals_vs_{strength}_{side}"
+            shots_col = f"shots_vs_{strength}_{side}"
+            shots_on_col = f"shots_on_vs_{strength}_{side}"
+            conv_col = f"conversion_vs_{strength}_{side}"
+            eff_col = f"efficiency_vs_{strength}_{side}"
+            df[conv_col] = df[goals_col] / (df[shots_col] + 0.01)
+            df[eff_col] = df[goals_col] / (df[shots_on_col] + 0.01)
+
+    features = [col for col in df.columns if (
+        col.startswith("conversion_vs_") or
+        col.startswith("efficiency_vs_") or
+        col.startswith("goals_vs_") or
+        col.startswith("shots_vs_") or
+        col.startswith("shots_on_vs_")
+    )]
+    
+    for idx, row in df.iterrows():
+        home = row["HomeTeam"]
+        away = row["AwayTeam"]
+        date = row["Date"]
+
+        past_matches = df[
+            (((df["HomeTeam"] == home) & (df["AwayTeam"] == away)) |
+             ((df["HomeTeam"] == away) & (df["AwayTeam"] == home))) &
+            (df["Date"] < date)
+        ].sort_values("Date").tail(5)
+
+        if len(past_matches) >= 2:
+            goals = past_matches["FTHG"] + past_matches["FTAG"]
+            df.at[idx, "h2h_avg_goals"] = goals.mean()
+            df.at[idx, "h2h_draw_ratio"] = (past_matches["FTHG"] == past_matches["FTAG"]).mean()
+            df.at[idx, "h2h_home_win_ratio"] = ((past_matches["HomeTeam"] == home) & (past_matches["FTHG"] > past_matches["FTAG"])).mean()
+            df.at[idx, "h2h_away_win_ratio"] = ((past_matches["AwayTeam"] == away) & (past_matches["FTAG"] > past_matches["FTHG"])).mean()
+
+    df.to_csv("debug_match_result.csv",index=False)
     return df[features + ["HomeTeam", "AwayTeam", "Date", "target_result"]]
