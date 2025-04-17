@@ -33,7 +33,7 @@ def calculate_elo(df, k=30, base_rating=1500):
 
         elo_home_list.append(elo_home)
         elo_away_list.append(elo_away)
-
+    
     df["elo_home"] = elo_home_list
     df["elo_away"] = elo_away_list
     df["elo_diff"] = df["elo_home"] - df["elo_away"]
@@ -41,10 +41,10 @@ def calculate_elo(df, k=30, base_rating=1500):
 
 def save_debug_outputs(df):
     debug_cols_strength = ["HomeTeam", "AwayTeam", "Date", "goals_vs_weak_home", "shots_vs_strong_away"]
-    debug_cols_h2h = ["HomeTeam", "AwayTeam", "Date", "h2h_avg_goals_total", "h2h_over25_ratio"]
+    #debug_cols_h2h = ["HomeTeam", "AwayTeam", "Date", "h2h_avg_goals_total", "h2h_over25_ratio"]
 
     df[debug_cols_strength].tail(20).to_csv("strength_metrics_tail.csv", index=False)
-    df[debug_cols_h2h].tail(20).to_csv("h2h_metrics_tail.csv", index=False)
+    #df[debug_cols_h2h].tail(20).to_csv("h2h_metrics_tail.csv", index=False)
 
 def generate_features(df, mode="train"):
     df = df.copy()
@@ -102,8 +102,11 @@ def generate_features(df, mode="train"):
         df[f"disciplinary_index_{prefix}"] = (df.get(f"yellow_{prefix}_last5_mean", 0) + 2 * df.get(f"red_{prefix}_last5_mean", 0)) / (df.get(f"fouls_{prefix}_last5_mean", 0) + 0.01)
         df[f"goal_per_shot_on_target_{prefix}"] = df.get(f"goals_{prefix}_last5_mean", 0) / (df.get(f"shots_on_target_{prefix}_last5_mean", 0) + 0.01)
 
+    
+    
     df["tempo_score"] = df.get("shots_home_last5_mean", 0) + df.get("shots_away_last5_mean", 0) + df.get("shots_on_target_home_last5_mean", 0) + df.get("shots_on_target_away_last5_mean", 0) + df.get("corners_home_last5_mean", 0) + df.get("corners_away_last5_mean", 0)
-
+    df["tempo_score_norm"] = (df["tempo_score"] - df["tempo_score"].mean()) / (df["tempo_score"].std() + 1e-5)
+    
     df["conversion_rate_diff"] = df["shot_conversion_rate_home"] - df["shot_conversion_rate_away"]
     df["attacking_pressure_diff"] = df["attacking_pressure_home"] - df["attacking_pressure_away"]
     df["goal_per_shot_on_target_diff"] = df["goal_per_shot_on_target_home"] - df["goal_per_shot_on_target_away"]
@@ -114,17 +117,24 @@ def generate_features(df, mode="train"):
     else:
         df["match_weight"] = 1.0
 
-    df["home_advantage_weight"] = df["elo_home"] - df["elo_away"]
+    
+    df["elo_home_norm"] = (df["elo_home"] - df["elo_home"].mean()) / (df["elo_home"].std() + 1e-5)
+    df["elo_away_norm"] = (df["elo_away"] - df["elo_away"].mean()) / (df["elo_away"].std() + 1e-5)
+    df["home_advantage_weight"] = df["elo_home_norm"] - df["elo_away_norm"]
+    df["home_advantage_weight_norm"] = (df["home_advantage_weight"] - df["home_advantage_weight"].mean()) / (df["home_advantage_weight"].std() + 1e-5)
     df["sample_uncertainty_weight"] = 1 / (1 + df["elo_diff"].abs() / 400)
     df["recent_goal_variance_raw"] = df["goals_home_last5_var"].fillna(0) + df["goals_away_last5_var"].fillna(0)
     df["recent_goal_variance_weight"] = np.log1p(df["recent_goal_variance_raw"])
 
     df["style_chaos_index"] = df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"] + df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"]
+    df["style_chaos_index_norm"] = (df["style_chaos_index"] - df["style_chaos_index"].mean()) / (df["style_chaos_index"].std() + 1e-5)
     df["style_chaos_diff"] = (df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"]) - (df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"])
 
     df["elo_all"] = df[["elo_home", "elo_away"]].mean(axis=1)
-    df["elo_weak_threshold"] = df["elo_all"].expanding().quantile(0.33)
-    df["elo_strong_threshold"] = df["elo_all"].expanding().quantile(0.66)
+    df["elo_all_norm"] = (df["elo_all"] - df["elo_all"].mean()) / (df["elo_all"].std() + 1e-5)
+    df["elo_weak_threshold"] = df["elo_all_norm"].expanding().quantile(0.33)
+    df["elo_strong_threshold"] = df["elo_all_norm"].expanding().quantile(0.66)
+
 
     # === xG-proxy metriky ===
     df["home_xg_proxy"] = (
@@ -149,7 +159,7 @@ def generate_features(df, mode="train"):
         (1 - df["shot_conversion_rate_home"]) * df["disciplinary_index_away"]
     )
 
-
+    
 
     def categorize_strength(row, side):
         opp_elo = row["elo_away"] if side == "HomeTeam" else row["elo_home"]
@@ -225,11 +235,19 @@ def generate_features(df, mode="train"):
         past_h2h = df[((df["HomeTeam"].str.strip() == home) & (df["AwayTeam"].str.strip() == away)) | ((df["HomeTeam"].str.strip() == away) & (df["AwayTeam"].str.strip() == home)) & (df["Date"] < date)].sort_values("Date").tail(5)
         if len(past_h2h) >= 2:
             goals = past_h2h["FTHG"] + past_h2h["FTAG"]
-            df.at[idx, "h2h_avg_goals_total"] = goals.mean()
+            h2h_goals_mean = goals.mean()
+            df.at[idx, "h2h_avg_goals_total"] = h2h_goals_mean
+            df.at[idx, "h2h_avg_goals_total_adj"] = h2h_goals_mean - df.at[idx, "league_avg_goals"]
             df.at[idx, "h2h_over25_ratio"] = (goals > 2.5).mean()
+            
 
-    df[["HomeTeam", "AwayTeam", "Date", "goals_vs_weak_home", "shots_vs_strong_away"]].tail(20)
-    df[["HomeTeam", "AwayTeam", "Date", "h2h_avg_goals_total", "h2h_over25_ratio"]].tail(20)
+    df["h2h_avg_goals_total_adj_norm"] = (df["h2h_avg_goals_total_adj"] - df["h2h_avg_goals_total_adj"].mean()) / (df["h2h_avg_goals_total_adj"].std() + 1e-5)
+
+
+    
+
+    #df[["HomeTeam", "AwayTeam", "Date", "goals_vs_weak_home", "shots_vs_strong_away"]].tail(20)
+    #df[["HomeTeam", "AwayTeam", "Date", "h2h_avg_goals_total", "h2h_over25_ratio"]].tail(20)
 
 
     final_features = [
@@ -245,9 +263,9 @@ def generate_features(df, mode="train"):
     feature_block_aggs = [f"{key}_{side}_last5_{agg}" for key in agg_keys for side in sides for agg in aggs]
     feature_block_derived = [f"{metric}_{side}" for metric in ["shot_conversion_rate", "attacking_pressure", "goal_per_shot_on_target"] for side in sides]
     feature_block_diffs = [
-        "tempo_score", "conversion_rate_diff", "attacking_pressure_diff", "goal_per_shot_on_target_diff",
-        "sample_uncertainty_weight", "home_advantage_weight", "recent_goal_variance_weight",
-        "style_chaos_diff", "disciplinary_index_diff", "h2h_avg_goals_total"
+        "tempo_score_norm", "conversion_rate_diff", "attacking_pressure_diff", "goal_per_shot_on_target_diff",
+        "sample_uncertainty_weight", "home_advantage_weight_norm", "recent_goal_variance_weight",
+        "style_chaos_diff", "disciplinary_index_diff", "h2h_avg_goals_total_adj_norm"
     ]
 
     final_features += feature_block_aggs + feature_block_derived + feature_block_diffs + performance_vs_strength_features

@@ -52,14 +52,20 @@ def generate_match_result_features(df, mode="train"):
 
     df["goal_diff_last5"] = df["goals_home_last5"] - df["goals_away_last5"]
 
-    df["chaos_index"] = (
+    df["chaos_index_prenorm"] = (
         df["shots_home_last5"] + df["shots_away_last5"] +
         df["corners_home_last5"] + df["corners_away_last5"] +
         df["fouls_home_last5"] + df["fouls_away_last5"]
     )
+    # 🔧 Chaos index normalizace
+    df["chaos_index"] = (df["chaos_index_prenorm"] - df["chaos_index_prenorm"].mean()) / (df["chaos_index_prenorm"].std() + 1e-5)
 
-    df["disciplinary_index_home"] = (df["yellow_home_last5"] + 2 * df["red_home_last5"]) / (df["fouls_home_last5"] + 0.1)
-    df["disciplinary_index_away"] = (df["yellow_away_last5"] + 2 * df["red_away_last5"]) / (df["fouls_away_last5"] + 0.1)
+    df["disciplinary_index_home_prenorm"] = (df["yellow_home_last5"] + 2 * df["red_home_last5"]) / (df["fouls_home_last5"] + 0.1)
+    df["disciplinary_index_away_prenorm"] = (df["yellow_away_last5"] + 2 * df["red_away_last5"]) / (df["fouls_away_last5"] + 0.1)
+    # 🔧 Disciplinární index normalizace
+    df["disciplinary_index_home"] = (df["disciplinary_index_home_prenorm"] - df["disciplinary_index_home_prenorm"].mean()) / (df["disciplinary_index_home_prenorm"].std() + 1e-5)
+
+    df["disciplinary_index_away"] = (df["disciplinary_index_away_prenorm"] - df["disciplinary_index_away_prenorm"].mean()) / (df["disciplinary_index_away_prenorm"].std() + 1e-5)
 
     df["form_home_last5_avg"] = df.groupby("HomeTeam")["target_result"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).apply(lambda r: ((r==0)*3 + (r==1)*1).mean()))
     df["form_away_last5_avg"] = df.groupby("AwayTeam")["target_result"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).apply(lambda r: ((r==2)*3 + (r==1)*1).mean()))

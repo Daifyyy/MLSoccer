@@ -89,6 +89,7 @@ def evaluate(model, X_test, y_test, label, threshold=0.5):
 
 if __name__ == "__main__":
     league_list = ["E0", "E1", "SP1", "D1", "D2", "I1", "F1", "B1", "P1", "T1", "N1"]
+    #league_list = ["E0"]
     for league_code in league_list:
         catboost_model, rf_model, X_test, y_test = train_and_save_models(league_code)
         if catboost_model is None:
