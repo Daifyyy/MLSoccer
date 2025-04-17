@@ -116,7 +116,8 @@ def generate_features(df, mode="train"):
 
     df["home_advantage_weight"] = df["elo_home"] - df["elo_away"]
     df["sample_uncertainty_weight"] = 1 / (1 + df["elo_diff"].abs() / 400)
-    df["recent_goal_variance_weight"] = 1 / (1 + df["goals_home_last5_var"].fillna(0) + df["goals_away_last5_var"].fillna(0))
+    df["recent_goal_variance_raw"] = df["goals_home_last5_var"].fillna(0) + df["goals_away_last5_var"].fillna(0)
+    df["recent_goal_variance_weight"] = np.log1p(df["recent_goal_variance_raw"])
 
     df["style_chaos_index"] = df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"] + df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"]
     df["style_chaos_diff"] = (df["corners_home_last5_mean"] + df["fouls_home_last5_mean"] + df["shots_home_last5_mean"]) - (df["corners_away_last5_mean"] + df["fouls_away_last5_mean"] + df["shots_away_last5_mean"])
@@ -124,6 +125,31 @@ def generate_features(df, mode="train"):
     df["elo_all"] = df[["elo_home", "elo_away"]].mean(axis=1)
     df["elo_weak_threshold"] = df["elo_all"].expanding().quantile(0.33)
     df["elo_strong_threshold"] = df["elo_all"].expanding().quantile(0.66)
+
+    # === xG-proxy metriky ===
+    df["home_xg_proxy"] = (
+        df["shots_on_target_home_last5_mean"] * 0.3 +
+        (df["shots_home_last5_mean"] - df["shots_on_target_home_last5_mean"]) * 0.1
+    )
+    df["away_xg_proxy"] = (
+        df["shots_on_target_away_last5_mean"] * 0.3 +
+        (df["shots_away_last5_mean"] - df["shots_on_target_away_last5_mean"]) * 0.1
+    )
+    df["xg_proxy_diff"] = df["home_xg_proxy"] - df["away_xg_proxy"]
+
+    # === Low tempo index ===
+    df["low_tempo_index"] = (
+        (df["shots_home_last5_mean"] + df["shots_away_last5_mean"] +
+        df["fouls_home_last5_mean"] + df["fouls_away_last5_mean"]) < 20
+    ).astype(int)
+
+    # === Defense suppression score ===
+    df["defense_suppression_score"] = (
+        (1 - df["shot_conversion_rate_away"]) * df["disciplinary_index_home"] +
+        (1 - df["shot_conversion_rate_home"]) * df["disciplinary_index_away"]
+    )
+
+
 
     def categorize_strength(row, side):
         opp_elo = row["elo_away"] if side == "HomeTeam" else row["elo_home"]
@@ -209,7 +235,7 @@ def generate_features(df, mode="train"):
     final_features = [
         "home_team_target_enc", "away_team_target_enc",
         "home_team_avg_goals_enc", "away_team_avg_goals_enc",
-        "elo_diff"
+        "elo_diff","xg_proxy_diff", "low_tempo_index", "defense_suppression_score"
     ]
 
     agg_keys = ["goals", "conceded", "shots", "shots_on_target", "corners", "fouls", "yellow", "red"]
@@ -229,6 +255,7 @@ def generate_features(df, mode="train"):
     features_list_code = "feature_cols = [\n" + ",\n".join([f'    \"{f}\"' for f in final_features]) + "\n]"
     Path("features_list.py").write_text(features_list_code)
 
+    
     if mode == "predict":
         rolling_cols = [col for col in df.columns if "_last5_" in col or col.endswith("_last5_mean")]
         for col in rolling_cols:
