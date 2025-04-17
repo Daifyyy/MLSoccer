@@ -71,7 +71,7 @@ def generate_match_result_features(df, mode="train"):
     df["form_away_last5_avg"] = df.groupby("AwayTeam")["target_result"].transform(lambda x: x.shift(1).rolling(5, min_periods=1).apply(lambda r: ((r==2)*3 + (r==1)*1).mean()))
 
     # H2H metriky
-    df["h2h_avg_goals"] = np.nan
+    #df["h2h_avg_goals"] = np.nan
     df["h2h_draw_ratio"] = np.nan
     df["h2h_home_win_ratio"] = np.nan
     df["h2h_away_win_ratio"] = np.nan
@@ -84,7 +84,7 @@ def generate_match_result_features(df, mode="train"):
         if len(past_h2h) >= 2:
             goals = past_h2h["FTHG"] + past_h2h["FTAG"]
             results = past_h2h["FTR"]
-            df.at[idx, "h2h_avg_goals"] = goals.mean()
+            #df.at[idx, "h2h_avg_goals"] = goals.mean()
             df.at[idx, "h2h_draw_ratio"] = (results == "D").mean()
             df.at[idx, "h2h_home_win_ratio"] = (results == "H").mean()
             df.at[idx, "h2h_away_win_ratio"] = (results == "A").mean()
@@ -112,7 +112,7 @@ def generate_match_result_features(df, mode="train"):
         "goal_diff_last5", "chaos_index",
         "disciplinary_index_home", "disciplinary_index_away",
         "form_home_last5_avg", "form_away_last5_avg",
-        "h2h_avg_goals", "h2h_draw_ratio", "h2h_home_win_ratio", "h2h_away_win_ratio",
+        "h2h_draw_ratio", "h2h_home_win_ratio", "h2h_away_win_ratio",#h2h_avg_goals
         "draw_tendency_index", "draw_rate_home", "draw_rate_away", "elo_diff_close"
     ]
     
@@ -198,7 +198,7 @@ def generate_match_result_features(df, mode="train"):
 
         if len(past_matches) >= 2:
             goals = past_matches["FTHG"] + past_matches["FTAG"]
-            df.at[idx, "h2h_avg_goals"] = goals.mean()
+            #df.at[idx, "h2h_avg_goals"] = goals.mean()
             df.at[idx, "h2h_draw_ratio"] = (past_matches["FTHG"] == past_matches["FTAG"]).mean()
             df.at[idx, "h2h_home_win_ratio"] = ((past_matches["HomeTeam"] == home) & (past_matches["FTHG"] > past_matches["FTAG"])).mean()
             df.at[idx, "h2h_away_win_ratio"] = ((past_matches["AwayTeam"] == away) & (past_matches["FTAG"] > past_matches["FTHG"])).mean()

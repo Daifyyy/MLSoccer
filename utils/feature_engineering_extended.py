@@ -241,7 +241,7 @@ def generate_features(df, mode="train"):
             df.at[idx, "h2h_over25_ratio"] = (goals > 2.5).mean()
             
 
-    df["h2h_avg_goals_total_adj_norm"] = (df["h2h_avg_goals_total_adj"] - df["h2h_avg_goals_total_adj"].mean()) / (df["h2h_avg_goals_total_adj"].std() + 1e-5)
+    #df["h2h_avg_goals_total_adj_norm"] = (df["h2h_avg_goals_total_adj"] - df["h2h_avg_goals_total_adj"].mean()) / (df["h2h_avg_goals_total_adj"].std() + 1e-5)
 
 
     
@@ -265,7 +265,7 @@ def generate_features(df, mode="train"):
     feature_block_diffs = [
         "tempo_score_norm", "conversion_rate_diff", "attacking_pressure_diff", "goal_per_shot_on_target_diff",
         "sample_uncertainty_weight", "home_advantage_weight_norm", "recent_goal_variance_weight",
-        "style_chaos_diff", "disciplinary_index_diff", "h2h_avg_goals_total_adj_norm"
+        "style_chaos_diff", "disciplinary_index_diff" #h2h_avg_goals_total_adj_norm
     ]
 
     final_features += feature_block_aggs + feature_block_derived + feature_block_diffs + performance_vs_strength_features

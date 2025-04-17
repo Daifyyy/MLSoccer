@@ -70,7 +70,6 @@ feature_cols = [
     "recent_goal_variance_weight",
     "style_chaos_diff",
     "disciplinary_index_diff",
-    "h2h_avg_goals_total_adj_norm",
     "goals_vs_weak_home",
     "conceded_vs_weak_home",
     "shots_vs_weak_home",
