@@ -1,5 +1,4 @@
 {
     "rf_best_threshold": 0.4400000000000001,
-    "xgb_best_threshold": 0.46000000000000013,
-    "lgb_best_threshold": 0.49000000000000016
+    "catboost_best_threshold": 0.4300000000000001
 }

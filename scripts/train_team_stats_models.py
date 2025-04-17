@@ -2,7 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 import joblib
-from xgboost import XGBRegressor
+from catboost import CatBoostRegressor
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import mean_squared_error, brier_score_loss
 from utils.data_loader import load_data_by_league
 from utils.feature_engineering_team_stats import generate_team_stats_features
 
@@ -49,19 +51,33 @@ def train_team_stats_models(league_code, nan_threshold=0.3):
             print(f"❌ Žádná validní data pro {target}, model nebude trénován.")
             continue
 
-        model = XGBRegressor(
-            n_estimators=150,
-            max_depth=4,
+        model = CatBoostRegressor(
+            iterations=150,
+            depth=4,
             learning_rate=0.05,
-            objective="reg:squarederror",
-            random_state=42
+            loss_function="RMSE",
+            random_seed=42,
+            verbose=0
         )
 
         model.fit(X_train_clean, y_train_clean)
 
         preds = model.predict(X_test)
-        mse = np.mean((preds - y_test) ** 2)
+        mse = mean_squared_error(y_test, preds)
         print(f"MSE na testovací sadě pro {target}: {mse:.4f}")
+
+        # === Platt scaling ===
+        try:
+            probs = (preds - preds.min()) / (preds.max() - preds.min() + 1e-8)
+            probs = np.clip(probs, 0.001, 0.999)  # pojistka proti 0 a 1
+            platt_model = LogisticRegression(max_iter=1000)
+            platt_model.fit(probs.reshape(-1, 1), y_test)
+            calibrated_probs = platt_model.predict_proba(probs.reshape(-1, 1))[:, 1]
+            brier = brier_score_loss(y_test, calibrated_probs)
+            print(f"Brier score (Platt kalibrace) pro {target}: {brier:.4f}")
+            joblib.dump(platt_model, f"models/{league_code}_team_stats/{league_code}_{target}_platt.joblib")
+        except Exception as e:
+            print(f"⚠️ Platt scaling selhal pro {target}: {e}")
 
         model_path = f"models/{league_code}_team_stats/{league_code}_{target}_model.joblib"
         joblib.dump(model, model_path)

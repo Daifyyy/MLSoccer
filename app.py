@@ -1,4 +1,3 @@
-
 import streamlit as st
 from features_list import feature_cols
 import pandas as pd
@@ -39,24 +38,17 @@ def get_model_importance(model, feature_cols):
     except Exception as e:
         return None, None
 
-
-
-
 st.set_page_config(layout="wide")
 st.title("⚽ Predikce Over 2.5 gólů se sílou sázkové příležitosti")
 
 league_code = st.selectbox("Zvol ligu:", ["E0","E1", "SP1", "D1","D2", "I1", "F1","B1","P1","T1","N1"])
 
 df_raw = load_data_by_league(league_code)
-# Oprava chyb při načítání týmů (NaN hodnoty)
 df_raw["HomeTeam"] = df_raw["HomeTeam"].astype(str).str.strip()
 df_raw["AwayTeam"] = df_raw["AwayTeam"].astype(str).str.strip()
-
-# Odstranění chyb, kdy Home/AwayTeam je NaN nebo prázdný string
 df_raw = df_raw[(df_raw["HomeTeam"] != "nan") & (df_raw["AwayTeam"] != "nan")]
 df_raw = df_raw[(df_raw["HomeTeam"] != "") & (df_raw["AwayTeam"] != "")]
 
-# Debug výpis: podezřelé řádky
 invalid_rows = df_raw[df_raw["HomeTeam"].isna() | df_raw["AwayTeam"].isna()]
 if not invalid_rows.empty:
     st.warning("⚠️ Chybné nebo prázdné názvy týmů byly detekovány a vynechány.")
@@ -71,12 +63,9 @@ if os.path.exists(thresholds_path):
     with open(thresholds_path, "r") as f:
         thresholds = json.load(f)
         rf_thresh = thresholds.get("rf_best_threshold", 0.5)
-        xgb_thresh = thresholds.get("xgb_best_threshold", 0.5)
-        lgb_thresh = thresholds.get("lgb_best_threshold", 0.5)
+        catboost_thresh = thresholds.get("catboost_best_threshold", 0.5)
 else:
-    rf_thresh = xgb_thresh = lgb_thresh = 0.5
-
-#selected_model = st.radio("Vyber model k analýze:", ["LightGBM", "XGBoost", "Random Forest"])
+    rf_thresh = catboost_thresh = 0.5
 
 if st.button("🔍 Spustit predikci"):
     try:
@@ -104,14 +93,10 @@ if st.button("🔍 Spustit predikci"):
             st.warning("⚠️ Nepodařilo se najít vstupní data pro predikci.")
             st.stop()
 
-
         model_path_rf = f"models/{league_code}_rf_model.joblib"
-        model_path_xgb = f"models/{league_code}_xgb_model.joblib"
-        model_path_lgb = f"models/{league_code}_lgb_model.joblib"
-
+        model_path_catboost = f"models/{league_code}_catboost_model.joblib"
         rf_model = joblib.load(model_path_rf)
-        xgb_model = joblib.load(model_path_xgb)
-        lgb_model = joblib.load(model_path_lgb)
+        catboost_model = joblib.load(model_path_catboost)
 
         for col in feature_cols:
             if col not in match_row.columns:
@@ -122,31 +107,24 @@ if st.button("🔍 Spustit predikci"):
             X_input = X_input.drop(columns=['match_weight'])
 
         rf_prob = rf_model.predict_proba(X_input)[0][1]
-        xgb_prob = xgb_model.predict_proba(X_input)[0][1]
-        lgb_prob = lgb_model.predict_proba(X_input)[0][1]
+        catboost_prob = catboost_model.predict_proba(X_input)[0][1]
 
         rf_pred = rf_prob >= rf_thresh
-        xgb_pred = xgb_prob >= xgb_thresh
-        lgb_pred = lgb_prob >= lgb_thresh
+        catboost_pred = catboost_prob >= catboost_thresh
 
         data = {
-            "Model": ["Random Forest", "XGBoost", "LightGBM"],
+            "Model": ["Random Forest", "CatBoost"],
             "Under 2.5": [
                 f"{(1 - rf_prob)*100:.2f}% - {1 / (1 - rf_prob):.2f}",
-                f"{(1 - xgb_prob)*100:.2f}% - {1 / (1 - xgb_prob):.2f}",
-                f"{(1 - lgb_prob)*100:.2f}% - {1 / (1 - lgb_prob):.2f}"
+                f"{(1 - catboost_prob)*100:.2f}% - {1 / (1 - catboost_prob):.2f}"
             ],
             "Over 2.5": [
                 f"{rf_prob*100:.2f}% - {1 / rf_prob:.2f}",
-                f"{xgb_prob*100:.2f}% - {1 / xgb_prob:.2f}",
-                f"{lgb_prob*100:.2f}% - {1 / lgb_prob:.2f}"
+                f"{catboost_prob*100:.2f}% - {1 / catboost_prob:.2f}"
             ]
         }
 
-        # Vytvoříme DataFrame
         df_predictions = pd.DataFrame(data)
-
-        # Zobrazíme tabulku
         st.subheader(f"📊 Predikce: **{home_team} vs {away_team}**")
         st.write(df_predictions.style.hide(axis="index"))
 

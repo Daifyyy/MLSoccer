@@ -1,7 +1,8 @@
 import pandas as pd
 import joblib
 import os
-from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 from utils.data_loader import load_data_by_league
 from utils.feature_engineering_match_result import generate_match_result_features
@@ -11,6 +12,7 @@ import numpy as np
 def train_match_result_model(league_code):
     print(f"\U0001F3C6 Trénink modelu pro predikci výsledku zápasu ({league_code})")
     df = load_data_by_league(league_code)
+
     df_train = df.iloc[:-int(len(df) * 0.2)]
     df_test = df.iloc[-int(len(df) * 0.2):]
 
@@ -26,18 +28,21 @@ def train_match_result_model(league_code):
     class_weights_dict = {i: weight for i, weight in enumerate(class_weights)}
     sample_weights = y_train.map(class_weights_dict)
 
-    model = XGBClassifier(
-        objective="multi:softprob",
-        num_class=3,
-        max_depth=6,
-        n_estimators=300,
+    model = CatBoostClassifier(
+        iterations=300,
+        depth=6,
         learning_rate=0.08,
-        eval_metric="mlogloss",
-        random_state=42,
-        enable_categorical=False
+        loss_function="MultiClass",
+        random_seed=42,
+        verbose=0
     )
 
     model.fit(X_train, y_train, sample_weight=sample_weights)
+
+    # === Platt scaling (multinomial logistic regression on validation set) ===
+    probs_val = model.predict_proba(X_test)
+    platt_model = LogisticRegression(max_iter=1000, multi_class='multinomial')
+    platt_model.fit(probs_val, y_test)
 
     y_pred = model.predict(X_test)
     print("\n📊 Výsledky na testovací sadě:")
@@ -46,9 +51,9 @@ def train_match_result_model(league_code):
     print(confusion_matrix(y_test, y_pred))
 
     os.makedirs("models", exist_ok=True)
-    model_path = f"models/{league_code}_result_model.joblib"
-    joblib.dump(model, model_path)
-    print(f"\n✅ Model uložen do {model_path}")
+    joblib.dump(model, f"models/{league_code}_result_model.joblib")
+    joblib.dump(platt_model, f"models/{league_code}_result_model_platt.joblib")
+    print(f"\n✅ Model a Platt kalibrace uloženy pro ligu {league_code}")
 
 if __name__ == "__main__":
     league_list = ["E0", "E1", "SP1", "D1", "D2", "I1", "F1", "B1", "P1", "T1", "N1"]
